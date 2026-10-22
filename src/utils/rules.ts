@@ -483,3 +483,99 @@ export function validateCleanerAccessToComplaint(
   return { allowed: true };
 }
 
+/**
+ * Validates cleaner assignment update payload.
+ * Validates cleanerId, supervisorId, and localityIds.
+ */
+export function validateCleanerAssignmentPayload(payload: {
+  cleanerId?: string | null;
+  supervisorId?: string | null;
+  localityIds?: string[] | null;
+  accountStatus?: string | null;
+}): { valid: boolean; errors: Record<string, string> } {
+  const errors: Record<string, string> = {};
+
+  if (!payload || !payload.cleanerId || typeof payload.cleanerId !== 'string' || payload.cleanerId.trim().length === 0) {
+    errors.cleanerId = 'Valid cleanerId is required.';
+  }
+
+  if (payload.supervisorId !== undefined && payload.supervisorId !== null) {
+    if (typeof payload.supervisorId !== 'string') {
+      errors.supervisorId = 'supervisorId must be a string or null.';
+    }
+  }
+
+  if (payload.localityIds !== undefined && payload.localityIds !== null) {
+    if (!Array.isArray(payload.localityIds)) {
+      errors.localityIds = 'localityIds must be an array of strings.';
+    } else {
+      for (const id of payload.localityIds) {
+        if (!id || typeof id !== 'string' || id.trim().length === 0) {
+          errors.localityIds = 'All localityIds must be non-empty strings.';
+          break;
+        }
+      }
+    }
+  }
+
+  if (payload.accountStatus !== undefined && payload.accountStatus !== null) {
+    if (!['active', 'pending', 'suspended'].includes(payload.accountStatus)) {
+      errors.accountStatus = 'accountStatus must be active, pending, or suspended.';
+    }
+  }
+
+  return {
+    valid: Object.keys(errors).length === 0,
+    errors,
+  };
+}
+
+/**
+ * Prepares exact cleaner_service_areas records adhering to database schema:
+ * columns: cleaner_id, locality_id, is_approved, approved_by, approved_at, created_at
+ */
+export function formatCleanerServiceAreaRecords(params: {
+  cleanerId: string;
+  localityIds: string[];
+  isApproved: boolean;
+  approvedBy?: string | null;
+  timestamp?: string;
+}): Array<{
+  cleaner_id: string;
+  locality_id: string;
+  is_approved: boolean;
+  approved_by: string | null;
+  approved_at: string | null;
+  created_at: string;
+}> {
+  const { cleanerId, localityIds, isApproved, approvedBy, timestamp } = params;
+  const now = timestamp || new Date().toISOString();
+
+  // Deduplicate locality IDs
+  const uniqueLocalityIds = Array.from(new Set(localityIds.filter(Boolean)));
+
+  return uniqueLocalityIds.map((locId) => ({
+    cleaner_id: cleanerId,
+    locality_id: locId,
+    is_approved: isApproved,
+    approved_by: isApproved ? approvedBy || null : null,
+    approved_at: isApproved ? now : null,
+    created_at: now,
+  }));
+}
+
+/**
+ * Resolves a cleaner's service area display name with graceful fallback to locality master list.
+ */
+export function resolveCleanerLocalityDisplay(
+  serviceArea: { localityId: string; localityName?: string | null },
+  localities: Array<{ id: string; name: string }>
+): string {
+  if (serviceArea.localityName && serviceArea.localityName.trim() !== '' && serviceArea.localityName !== 'Locality') {
+    return serviceArea.localityName;
+  }
+  const match = localities.find((l) => l.id === serviceArea.localityId);
+  return match ? match.name : serviceArea.localityName || 'Locality';
+}
+
+

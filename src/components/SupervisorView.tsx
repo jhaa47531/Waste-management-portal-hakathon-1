@@ -228,7 +228,8 @@ export const SupervisorView: React.FC<SupervisorViewProps> = ({
     }
 
     const notes = cleanerAppNotes[app.id] || '';
-    const res = await portalStore.reviewCleanerApplication(app.id, decision, selectedLocs, notes);
+    const assignedSupId = decision === 'approved' ? (app.assignedSupervisorId || currentUser?.id || null) : null;
+    const res = await portalStore.reviewCleanerApplication(app.id, decision, selectedLocs, assignedSupId, notes);
 
     if (res.success) {
       setAppReviewMsg({

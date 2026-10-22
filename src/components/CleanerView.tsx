@@ -140,6 +140,14 @@ export const CleanerView: React.FC<CleanerViewProps> = ({
     }
   };
 
+  const resolveLocName = (sa: CleanerServiceArea): string => {
+    if (sa.localityName && sa.localityName !== 'Locality') {
+      return sa.localityName;
+    }
+    const match = localities.find((l) => l.id === sa.localityId);
+    return match ? match.name : sa.localityName || 'Locality';
+  };
+
   // If cleaner account is pending review, show clear application status view
   if (isPendingApproval || isSuspended) {
     return (
@@ -195,7 +203,7 @@ export const CleanerView: React.FC<CleanerViewProps> = ({
                       className="px-3 py-1.5 rounded-xl text-xs font-semibold bg-white dark:bg-slate-800 border border-amber-200 dark:border-amber-800 text-slate-800 dark:text-slate-200 flex items-center gap-1.5 shadow-2xs"
                     >
                       <MapPin className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
-                      {sa.localityName}
+                      {resolveLocName(sa)}
                       <span className="text-[10px] font-bold text-amber-700 dark:text-amber-300 uppercase">
                         (Pending)
                       </span>
@@ -276,7 +284,7 @@ export const CleanerView: React.FC<CleanerViewProps> = ({
           </p>
           <span className="text-[11px] text-slate-500 dark:text-slate-400 truncate block">
             {approvedAreas.length > 0
-              ? approvedAreas.map((a) => a.localityName).slice(0, 2).join(', ') + (approvedAreas.length > 2 ? '...' : '')
+              ? approvedAreas.map(resolveLocName).slice(0, 2).join(', ') + (approvedAreas.length > 2 ? '...' : '')
               : 'None'}
           </span>
         </div>
@@ -458,7 +466,7 @@ export const CleanerView: React.FC<CleanerViewProps> = ({
               >
                 <div className="flex items-center gap-2.5">
                   <MapPin className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
-                  <span className="font-bold text-xs">{sa.localityName}</span>
+                  <span className="font-bold text-xs">{resolveLocName(sa)}</span>
                 </div>
                 <span
                   className={`text-[10px] font-bold uppercase tracking-wider px-2.5 py-0.5 rounded-full ${

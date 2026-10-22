@@ -114,6 +114,15 @@ export const AdminView: React.FC<AdminViewProps> = ({
   const [editAreasMsg, setEditAreasMsg] = useState<{ text: string; error?: boolean } | null>(null);
 
   // --------------------------------------------------------------------------
+  // Unified Cleaner Assignment Modal State (Supervisor + Localities)
+  // --------------------------------------------------------------------------
+  const [assignModalCleaner, setAssignModalCleaner] = useState<UserProfile | null>(null);
+  const [assignModalSupervisorId, setAssignModalSupervisorId] = useState('');
+  const [assignModalLocalityIds, setAssignModalLocalityIds] = useState<string[]>([]);
+  const [isSavingUnifiedAssignment, setIsSavingUnifiedAssignment] = useState(false);
+  const [assignModalMsg, setAssignModalMsg] = useState<{ text: string; error?: boolean } | null>(null);
+
+  // --------------------------------------------------------------------------
   // Reset Password Modal State
   // --------------------------------------------------------------------------
   const [resetPwCleaner, setResetPwCleaner] = useState<UserProfile | null>(null);
@@ -378,6 +387,40 @@ export const AdminView: React.FC<AdminViewProps> = ({
       }, 1500);
     } else {
       setEditAreasMsg({ text: res.error || 'Failed to update service areas.', error: true });
+    }
+  };
+
+  // Unified Cleaner Assignment Handler (Supervisor + Localities simultaneously)
+  const handleOpenAssignModal = (cleaner: UserProfile) => {
+    setAssignModalCleaner(cleaner);
+    setAssignModalSupervisorId(cleaner.supervisorId || '');
+    const currentLocIds = serviceAreas
+      .filter((sa) => sa.cleanerId === cleaner.id && sa.isApproved)
+      .map((sa) => sa.localityId);
+    setAssignModalLocalityIds(currentLocIds);
+    setAssignModalMsg(null);
+  };
+
+  const handleSaveUnifiedAssignment = async () => {
+    if (!assignModalCleaner) return;
+    setIsSavingUnifiedAssignment(true);
+    setAssignModalMsg(null);
+
+    const res = await portalStore.updateCleaner({
+      cleanerId: assignModalCleaner.id,
+      supervisorId: assignModalSupervisorId || null,
+      localityIds: assignModalLocalityIds,
+    });
+    setIsSavingUnifiedAssignment(false);
+
+    if (res.success) {
+      setAssignModalMsg({ text: 'Supervisor and service localities saved successfully!' });
+      setTimeout(() => {
+        setAssignModalCleaner(null);
+        setAssignModalMsg(null);
+      }, 1500);
+    } else {
+      setAssignModalMsg({ text: res.error || 'Failed to update cleaner assignment.', error: true });
     }
   };
 
@@ -841,7 +884,16 @@ export const AdminView: React.FC<AdminViewProps> = ({
                     </div>
 
                     {/* Action Buttons */}
-                    <div className="pt-3 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between gap-2">
+                    <div className="pt-3 border-t border-slate-100 dark:border-slate-800 space-y-2">
+                      <button
+                        onClick={() => handleOpenAssignModal(cleaner)}
+                        className="w-full py-2 px-3 rounded-xl text-xs font-bold bg-purple-600 hover:bg-purple-700 text-white shadow-xs flex items-center justify-center gap-1.5 cursor-pointer transition-colors"
+                      >
+                        <CheckSquare className="w-3.5 h-3.5" />
+                        Assign Supervisor & Coverage Localities
+                      </button>
+
+                      <div className="flex items-center justify-between gap-2">
                       <button
                         onClick={() => handleToggleCleanerStatus(cleaner)}
                         className={`flex-1 py-1.5 px-2.5 rounded-lg text-xs font-bold transition-colors cursor-pointer border ${
@@ -867,7 +919,8 @@ export const AdminView: React.FC<AdminViewProps> = ({
                       </button>
                     </div>
                   </div>
-                );
+                </div>
+              );
               })}
             </div>
           )}
@@ -1490,6 +1543,115 @@ export const AdminView: React.FC<AdminViewProps> = ({
                   className="py-2 px-4 rounded-xl bg-purple-600 hover:bg-purple-700 text-white font-bold cursor-pointer disabled:opacity-40 transition-colors"
                 >
                   {isUpdatingSupervisor ? 'Saving...' : 'Save Supervisor Assignment'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* --------------------------------------------------------------------- */}
+      {/* MODAL 3.5: UNIFIED CLEANER ASSIGNMENT (SUPERVISOR & LOCALITIES)       */}
+      {/* --------------------------------------------------------------------- */}
+      {assignModalCleaner && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-xs">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl w-full max-w-lg p-6 shadow-2xl space-y-4">
+            <div className="flex items-start justify-between">
+              <div>
+                <h3 className="text-base font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                  <CheckSquare className="w-5 h-5 text-purple-600 dark:text-purple-400" />
+                  Assign Supervisor & Service Localities
+                </h3>
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                  Cleaner: <span className="font-semibold text-slate-800 dark:text-slate-200">{assignModalCleaner.fullName}</span> ({assignModalCleaner.email})
+                </p>
+              </div>
+              <button
+                onClick={() => setAssignModalCleaner(null)}
+                className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 p-1 cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {assignModalMsg && (
+              <div
+                className={`p-3 rounded-xl text-xs flex items-center gap-2 ${
+                  assignModalMsg.error
+                    ? 'bg-rose-50 dark:bg-rose-950/50 border border-rose-200 dark:border-rose-800 text-rose-800 dark:text-rose-300'
+                    : 'bg-emerald-50 dark:bg-emerald-950/50 border border-emerald-200 dark:border-emerald-800 text-emerald-800 dark:text-emerald-300'
+                }`}
+              >
+                {assignModalMsg.error ? <AlertCircle className="w-4 h-4 shrink-0" /> : <CheckCircle2 className="w-4 h-4 shrink-0" />}
+                <span>{assignModalMsg.text}</span>
+              </div>
+            )}
+
+            <div className="space-y-4 text-xs">
+              <div>
+                <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
+                  1. Designated Operations Supervisor
+                </label>
+                <select
+                  value={assignModalSupervisorId}
+                  onChange={(e) => setAssignModalSupervisorId(e.target.value)}
+                  className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white focus:ring-2 focus:ring-purple-500 focus:outline-hidden"
+                >
+                  <option value="">-- No Supervisor / Unassigned --</option>
+                  {supervisors.map((s) => (
+                    <option key={s.id} value={s.id}>
+                      {s.fullName} ({s.email})
+                    </option>
+                  ))}
+                </select>
+                <p className="text-[10px] text-slate-400 dark:text-slate-500 mt-1">
+                  This supervisor oversees task dispatch, field verification, and operational sign-off for this cleaner.
+                </p>
+              </div>
+
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="block font-bold text-slate-700 dark:text-slate-300">
+                    2. Authorized Service Coverage Localities ({assignModalLocalityIds.length} selected)
+                  </label>
+                  <span className="text-[10px] text-slate-400">At least 1 required</span>
+                </div>
+                <div className="grid grid-cols-2 gap-2 max-h-48 overflow-y-auto p-2.5 border border-slate-200 dark:border-slate-700 rounded-xl bg-slate-50 dark:bg-slate-800/60">
+                  {localities.map((loc) => (
+                    <label key={loc.id} className="flex items-center gap-2 cursor-pointer text-xs text-slate-800 dark:text-slate-200 hover:text-purple-600 dark:hover:text-purple-400">
+                      <input
+                        type="checkbox"
+                        checked={assignModalLocalityIds.includes(loc.id)}
+                        onChange={() => {
+                          setAssignModalLocalityIds((prev) =>
+                            prev.includes(loc.id)
+                              ? prev.filter((id) => id !== loc.id)
+                              : [...prev, loc.id]
+                          );
+                        }}
+                        className="rounded text-purple-600 focus:ring-purple-500"
+                      />
+                      <span className="truncate">{loc.name}</span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+
+              <div className="pt-2 flex items-center justify-end gap-2 border-t border-slate-100 dark:border-slate-800">
+                <button
+                  type="button"
+                  onClick={() => setAssignModalCleaner(null)}
+                  className="py-2 px-3 rounded-xl border border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 font-semibold cursor-pointer transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  disabled={isSavingUnifiedAssignment || assignModalLocalityIds.length === 0}
+                  onClick={handleSaveUnifiedAssignment}
+                  className="py-2 px-4 rounded-xl bg-purple-600 hover:bg-purple-700 text-white font-bold cursor-pointer disabled:opacity-40 transition-colors flex items-center gap-1.5 shadow-xs"
+                >
+                  {isSavingUnifiedAssignment ? 'Saving...' : 'Save Cleaner Assignment'}
                 </button>
               </div>
             </div>

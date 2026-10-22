@@ -393,30 +393,68 @@ class PortalStore {
         }
       } else if (this.state.currentUser && this.state.currentUser.role === 'cleaner') {
         // Cleaner: fetch their own service areas and supervisor details
-        const { data: saList } = await supabase
-          .from('cleaner_service_areas')
-          .select('*, locality:localities(name)')
-          .eq('cleaner_id', this.state.currentUser.id);
-        if (saList) {
-          this.state.serviceAreas = saList.map((sa: any) => ({
-            id: sa.id,
-            cleanerId: sa.cleaner_id,
-            localityId: sa.locality_id,
-            localityName: sa.locality?.name || 'Locality',
-            isApproved: sa.is_approved,
-            approvedBy: sa.approved_by,
-            approvedAt: sa.approved_at,
-          }));
+        let cleanerProfileLoaded = false;
+        try {
+          const { data: sessionData } = await supabase.auth.getSession();
+          const token = sessionData?.session?.access_token;
+          if (token) {
+            const res = await fetch('/api/cleaner/my-profile', {
+              headers: { Authorization: `Bearer ${token}` },
+            });
+            const data = await res.json().catch(() => null);
+            if (res.ok && data?.success && data?.profile) {
+              this.state.currentUser.supervisorId = data.profile.supervisorId || null;
+              this.state.currentUser.supervisorName = data.profile.supervisorName || null;
+              if (Array.isArray(data.serviceAreas)) {
+                this.state.serviceAreas = data.serviceAreas.map((sa: any) => ({
+                  id: sa.id,
+                  cleanerId: sa.cleanerId,
+                  localityId: sa.localityId,
+                  localityName:
+                    sa.localityName && sa.localityName !== 'Locality'
+                      ? sa.localityName
+                      : this.state.localities.find((l) => l.id === sa.localityId)?.name || 'Locality',
+                  isApproved: sa.isApproved,
+                  approvedBy: sa.approvedBy,
+                  approvedAt: sa.approvedAt,
+                }));
+              }
+              cleanerProfileLoaded = true;
+            }
+          }
+        } catch (err) {
+          console.warn('Cleaner profile endpoint note:', err);
         }
 
-        if (this.state.currentUser.supervisorId && !this.state.currentUser.supervisorName) {
-          const { data: supProf } = await supabase
-            .from('profiles')
-            .select('full_name')
-            .eq('id', this.state.currentUser.supervisorId)
-            .maybeSingle();
-          if (supProf?.full_name) {
-            this.state.currentUser.supervisorName = supProf.full_name;
+        if (!cleanerProfileLoaded) {
+          const { data: saList } = await supabase
+            .from('cleaner_service_areas')
+            .select('*, locality:localities(name)')
+            .eq('cleaner_id', this.state.currentUser.id);
+          if (saList) {
+            this.state.serviceAreas = saList.map((sa: any) => ({
+              id: sa.id,
+              cleanerId: sa.cleaner_id,
+              localityId: sa.locality_id,
+              localityName:
+                sa.locality?.name ||
+                this.state.localities.find((l) => l.id === sa.locality_id)?.name ||
+                'Locality',
+              isApproved: sa.is_approved,
+              approvedBy: sa.approved_by,
+              approvedAt: sa.approved_at,
+            }));
+          }
+
+          if (this.state.currentUser.supervisorId && !this.state.currentUser.supervisorName) {
+            const { data: supProf } = await supabase
+              .from('profiles')
+              .select('full_name')
+              .eq('id', this.state.currentUser.supervisorId)
+              .maybeSingle();
+            if (supProf?.full_name) {
+              this.state.currentUser.supervisorName = supProf.full_name;
+            }
           }
         }
       }

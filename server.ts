@@ -478,10 +478,81 @@ async function verifyAdminCaller(
 }
 
 /**
- * Safe Profile Upsert Helper
- * Handles 'phone' vs 'phone_number' and 'supervisor_id' column differences safely.
+ * Reusable helper: Validate that the caller is an active Administrator or Supervisor
  */
-async function safeUpsertProfile(data: {
+async function verifyStaffCaller(
+  authHeader?: string
+): Promise<{ ok: boolean; status: number; error?: string; callerId?: string; role?: string }> {
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    return {
+      ok: false,
+      status: 401,
+      error: 'Unauthorized: Missing or invalid Authorization Bearer token.',
+    };
+  }
+
+  const token = authHeader.replace('Bearer ', '').trim();
+  if (!supabaseAdmin) {
+    return {
+      ok: false,
+      status: 503,
+      error: 'Backend error: SUPABASE_SERVICE_ROLE_KEY is not configured on the server.',
+    };
+  }
+
+  try {
+    const { data: userData, error: userError } = await supabaseAdmin.auth.getUser(token);
+    if (userError || !userData?.user) {
+      return {
+        ok: false,
+        status: 401,
+        error: `Authentication failed: ${userError?.message || 'Invalid session'}`,
+      };
+    }
+
+    const callerId = userData.user.id;
+    const { data: callerProfile } = await supabaseAdmin
+      .from('profiles')
+      .select('role, account_status')
+      .eq('id', callerId)
+      .maybeSingle();
+
+    const callerRole = (
+      callerProfile?.role ||
+      userData.user.app_metadata?.role ||
+      userData.user.user_metadata?.role ||
+      ''
+    ).toString().toLowerCase();
+
+    const callerStatus = (
+      callerProfile?.account_status ||
+      'active'
+    ).toString().toLowerCase();
+
+    const isStaff =
+      callerStatus === 'active' &&
+      (callerRole === 'administrator' || callerRole === 'admin' || callerRole === 'supervisor');
+
+    if (!isStaff) {
+      return {
+        ok: false,
+        status: 403,
+        error: 'Forbidden: Only active administrators or supervisors can perform this operation.',
+      };
+    }
+
+    return { ok: true, status: 200, callerId, role: callerRole };
+  } catch (err: any) {
+    return { ok: false, status: 500, error: err.message || 'Error verifying caller authorization.' };
+  }
+}
+
+/**
+ * Robust Profile Save Helper
+ * Handles initial creation and updates with persistent supervisor_id preservation.
+ * Never strips supervisor_id on schema differences.
+ */
+async function saveProfile(data: {
   id: string;
   fullName: string;
   phone: string;
@@ -489,49 +560,145 @@ async function safeUpsertProfile(data: {
   accountStatus: 'active' | 'pending' | 'suspended';
   supervisorId?: string | null;
 }): Promise<{ error?: any }> {
-  if (!supabaseAdmin) return { error: new Error('No admin client') };
+  if (!supabaseAdmin) return { error: new Error('Supabase admin client unavailable') };
 
-  const basePayload: Record<string, any> = {
-    id: data.id,
-    full_name: data.fullName,
-    role: data.role,
-    account_status: data.accountStatus,
-    updated_at: new Date().toISOString(),
-  };
+  const nowIso = new Date().toISOString();
 
-  // Attempt 1: phone + supervisor_id
-  const payload1: Record<string, any> = { ...basePayload, phone: data.phone };
-  if (data.supervisorId) payload1.supervisor_id = data.supervisorId;
+  // Inspect existing profile if present to determine primary phone column name
+  const { data: existing } = await supabaseAdmin
+    .from('profiles')
+    .select('id, phone, phone_number, supervisor_id')
+    .eq('id', data.id)
+    .maybeSingle();
 
-  let { error } = await supabaseAdmin.from('profiles').upsert(payload1, { onConflict: 'id' });
+  if (existing) {
+    // Existing profile: perform targeted UPDATE
+    const updatePayload: Record<string, any> = {
+      full_name: data.fullName,
+      role: data.role,
+      account_status: data.accountStatus,
+      updated_at: nowIso,
+    };
 
-  // If supervisor_id column does not exist in profiles table, retry without supervisor_id
-  if (error && (error.message?.includes('supervisor_id') || error.code === 'PGRST204')) {
-    delete payload1.supervisor_id;
-    const res2 = await supabaseAdmin.from('profiles').upsert(payload1, { onConflict: 'id' });
-    error = res2.error;
-  }
-
-  // If 'phone' column failed, retry with 'phone_number'
-  if (error && (error.message?.includes("'phone'") || error.code === 'PGRST204')) {
-    const payload2: Record<string, any> = { ...basePayload, phone_number: data.phone };
-    if (data.supervisorId) payload2.supervisor_id = data.supervisorId;
-    let res3 = await supabaseAdmin.from('profiles').upsert(payload2, { onConflict: 'id' });
-    if (res3.error && (res3.error.message?.includes('supervisor_id') || res3.error.code === 'PGRST204')) {
-      delete payload2.supervisor_id;
-      res3 = await supabaseAdmin.from('profiles').upsert(payload2, { onConflict: 'id' });
+    if (data.supervisorId !== undefined) {
+      updatePayload.supervisor_id = data.supervisorId || null;
     }
-    error = res3.error;
-  }
 
-  return { error };
+    // Adapt phone column
+    if (existing.phone !== undefined && existing.phone !== null) {
+      updatePayload.phone = data.phone;
+    } else {
+      updatePayload.phone_number = data.phone;
+    }
+
+    let { error } = await supabaseAdmin
+      .from('profiles')
+      .update(updatePayload)
+      .eq('id', data.id);
+
+    // If phone column name mismatch occurred, retry with alternate column
+    if (error && (error.message?.includes("'phone_number'") || error.code === 'PGRST204')) {
+      delete updatePayload.phone_number;
+      updatePayload.phone = data.phone;
+      const res = await supabaseAdmin.from('profiles').update(updatePayload).eq('id', data.id);
+      error = res.error;
+    } else if (error && (error.message?.includes("'phone'") || error.code === 'PGRST204')) {
+      delete updatePayload.phone;
+      updatePayload.phone_number = data.phone;
+      const res = await supabaseAdmin.from('profiles').update(updatePayload).eq('id', data.id);
+      error = res.error;
+    }
+
+    return { error };
+  } else {
+    // New profile: perform UPSERT
+    const insertPayload: Record<string, any> = {
+      id: data.id,
+      full_name: data.fullName,
+      role: data.role,
+      account_status: data.accountStatus,
+      phone_number: data.phone,
+      created_at: nowIso,
+      updated_at: nowIso,
+    };
+
+    if (data.supervisorId) {
+      insertPayload.supervisor_id = data.supervisorId;
+    }
+
+    let { error } = await supabaseAdmin.from('profiles').upsert(insertPayload, { onConflict: 'id' });
+
+    if (error && (error.message?.includes("'phone_number'") || error.code === 'PGRST204')) {
+      delete insertPayload.phone_number;
+      insertPayload.phone = data.phone;
+      const res = await supabaseAdmin.from('profiles').upsert(insertPayload, { onConflict: 'id' });
+      error = res.error;
+    }
+
+    return { error };
+  }
 }
 
 /**
- * Safe Cleaner Application Upsert Helper
- * Handles 'applicant_id' vs 'cleaner_id', 'reviewed_by' vs 'reviewer_id', 'review_note' vs 'review_notes'.
+ * Dedicated Helper: Update Cleaner Profile & Supervisor
+ * Directly updates profiles.supervisor_id and synchronizes cleaner_applications.assigned_supervisor_id.
  */
-async function safeUpsertCleanerApplication(data: {
+async function updateCleanerProfileAndSupervisor(
+  cleanerId: string,
+  data: {
+    supervisorId?: string | null;
+    accountStatus?: 'active' | 'pending' | 'suspended';
+    fullName?: string;
+    phone?: string;
+  }
+): Promise<{ error?: any }> {
+  if (!supabaseAdmin) return { error: new Error('Supabase admin client unavailable') };
+
+  const nowIso = new Date().toISOString();
+  const updatePayload: Record<string, any> = {
+    updated_at: nowIso,
+  };
+
+  if (data.supervisorId !== undefined) {
+    updatePayload.supervisor_id = data.supervisorId || null;
+  }
+  if (data.accountStatus !== undefined) {
+    updatePayload.account_status = data.accountStatus;
+  }
+  if (data.fullName !== undefined && data.fullName.trim()) {
+    updatePayload.full_name = data.fullName.trim();
+  }
+
+  const { error } = await supabaseAdmin
+    .from('profiles')
+    .update(updatePayload)
+    .eq('id', cleanerId);
+
+  if (error) {
+    return { error: new Error(`Failed to update profiles: ${error.message}`) };
+  }
+
+  // If supervisor_id was specified, also update cleaner_applications.assigned_supervisor_id
+  if (data.supervisorId !== undefined) {
+    const targetSupId = data.supervisorId || null;
+    try {
+      await supabaseAdmin
+        .from('cleaner_applications')
+        .update({ assigned_supervisor_id: targetSupId })
+        .eq('cleaner_id', cleanerId);
+    } catch {
+      // Ignore if cleaner_applications update fails non-critically
+    }
+  }
+
+  return {};
+}
+
+/**
+ * Safe Cleaner Application Upsert / Update Helper
+ * Handles 'cleaner_id' and 'applicant_id' column naming gracefully.
+ */
+async function saveCleanerApplication(data: {
   cleanerId: string;
   status: 'pending' | 'approved' | 'rejected';
   reviewerId?: string | null;
@@ -544,78 +711,121 @@ async function safeUpsertCleanerApplication(data: {
 
   const nowIso = new Date().toISOString();
 
-  // Variant A: applicant_id, reviewed_by, review_note (live table schema)
-  const payloadA: Record<string, any> = {
-    applicant_id: data.cleanerId,
-    status: data.status,
-    created_at: data.createdAt || nowIso,
-  };
-  if (data.reviewerId) payloadA.reviewed_by = data.reviewerId;
-  if (data.reviewNotes) payloadA.review_note = data.reviewNotes;
-  if (data.reviewedAt) payloadA.reviewed_at = data.reviewedAt;
-
-  let { error } = await supabaseAdmin
+  // Check if an existing application exists
+  const { data: existing } = await supabaseAdmin
     .from('cleaner_applications')
-    .upsert(payloadA, { onConflict: 'applicant_id' });
+    .select('id, cleaner_id')
+    .eq('cleaner_id', data.cleanerId)
+    .maybeSingle();
 
-  // Variant B: cleaner_id, reviewer_id, review_notes (initial migration schema)
-  if (error && (error.message?.includes('applicant_id') || error.code === 'PGRST204' || error.message?.includes('violates'))) {
-    const payloadB: Record<string, any> = {
+  if (existing) {
+    const updatePayload: Record<string, any> = {
+      status: data.status,
+    };
+    if (data.assignedSupervisorId !== undefined) {
+      updatePayload.assigned_supervisor_id = data.assignedSupervisorId || null;
+    }
+    if (data.reviewerId) updatePayload.reviewer_id = data.reviewerId;
+    if (data.reviewNotes) updatePayload.review_notes = data.reviewNotes;
+    if (data.reviewedAt) updatePayload.reviewed_at = data.reviewedAt;
+
+    let { error } = await supabaseAdmin
+      .from('cleaner_applications')
+      .update(updatePayload)
+      .eq('id', existing.id);
+
+    if (error && (error.message?.includes('reviewer_id') || error.code === 'PGRST204')) {
+      delete updatePayload.reviewer_id;
+      delete updatePayload.review_notes;
+      if (data.reviewerId) updatePayload.reviewed_by = data.reviewerId;
+      if (data.reviewNotes) updatePayload.review_note = data.reviewNotes;
+      const res = await supabaseAdmin.from('cleaner_applications').update(updatePayload).eq('id', existing.id);
+      error = res.error;
+    }
+
+    return { error };
+  } else {
+    // Insert new application record
+    const insertPayload: Record<string, any> = {
       cleaner_id: data.cleanerId,
       status: data.status,
       created_at: data.createdAt || nowIso,
     };
-    if (data.reviewerId) payloadB.reviewer_id = data.reviewerId;
-    if (data.assignedSupervisorId) payloadB.assigned_supervisor_id = data.assignedSupervisorId;
-    if (data.reviewNotes) payloadB.review_notes = data.reviewNotes;
-    if (data.reviewedAt) payloadB.reviewed_at = data.reviewedAt;
+    if (data.assignedSupervisorId) insertPayload.assigned_supervisor_id = data.assignedSupervisorId;
+    if (data.reviewerId) insertPayload.reviewer_id = data.reviewerId;
+    if (data.reviewNotes) insertPayload.review_notes = data.reviewNotes;
+    if (data.reviewedAt) insertPayload.reviewed_at = data.reviewedAt;
 
-    let resB = await supabaseAdmin
-      .from('cleaner_applications')
-      .upsert(payloadB, { onConflict: 'cleaner_id' });
+    let { error } = await supabaseAdmin.from('cleaner_applications').insert(insertPayload);
 
-    if (resB.error && resB.error.message?.includes('assigned_supervisor_id')) {
-      delete payloadB.assigned_supervisor_id;
-      resB = await supabaseAdmin.from('cleaner_applications').upsert(payloadB, { onConflict: 'cleaner_id' });
+    if (error && (error.message?.includes('cleaner_id') || error.code === 'PGRST204')) {
+      delete insertPayload.cleaner_id;
+      insertPayload.applicant_id = data.cleanerId;
+      if (data.reviewerId) {
+        delete insertPayload.reviewer_id;
+        insertPayload.reviewed_by = data.reviewerId;
+      }
+      if (data.reviewNotes) {
+        delete insertPayload.review_notes;
+        insertPayload.review_note = data.reviewNotes;
+      }
+      const res = await supabaseAdmin.from('cleaner_applications').insert(insertPayload);
+      error = res.error;
     }
-    error = resB.error;
-  }
 
-  return { error };
+    return { error };
+  }
 }
 
 /**
- * Safe Service Areas Upsert Helper
+ * Verified Cleaner Service Areas Persistence Helper
+ * Uses verified live table columns: cleaner_id, locality_id, is_approved, approved_by, approved_at, created_at.
+ * Atomic clear-and-insert ensures clean state with visible error propagation.
  */
-async function safeUpsertServiceAreas(
+async function saveCleanerServiceAreas(
   cleanerId: string,
   localityIds: string[],
   isApproved: boolean,
   approvedBy?: string | null
-): Promise<void> {
-  if (!supabaseAdmin || !Array.isArray(localityIds) || localityIds.length === 0) return;
+): Promise<{ error?: any }> {
+  if (!supabaseAdmin) return { error: new Error('Supabase admin client unavailable') };
 
   const nowIso = new Date().toISOString();
-  for (const locId of localityIds) {
-    const payload: Record<string, any> = {
-      cleaner_id: cleanerId,
-      locality_id: locId,
-      is_approved: isApproved,
-      created_at: nowIso,
-    };
-    if (isApproved && approvedBy) {
-      payload.approved_by = approvedBy;
-      payload.approved_at = nowIso;
-    }
 
-    try {
-      await supabaseAdmin
-        .from('cleaner_service_areas')
-        .upsert(payload, { onConflict: 'cleaner_id,locality_id' });
-    } catch (err: any) {
-      console.warn('Service area upsert notice:', err?.message || err);
-    }
+  // 1. Delete previous service areas for this cleaner to prevent stale/duplicate assignments
+  const { error: delErr } = await supabaseAdmin
+    .from('cleaner_service_areas')
+    .delete()
+    .eq('cleaner_id', cleanerId);
+
+  if (delErr) {
+    return { error: new Error(`Failed to clear existing service areas: ${delErr.message}`) };
   }
+
+  if (!Array.isArray(localityIds) || localityIds.length === 0) {
+    return {};
+  }
+
+  // 2. Prepare records with exact schema columns
+  const records = localityIds.map((locId) => ({
+    cleaner_id: cleanerId,
+    locality_id: locId,
+    is_approved: isApproved,
+    approved_by: isApproved ? (approvedBy || null) : null,
+    approved_at: isApproved ? nowIso : null,
+    created_at: nowIso,
+  }));
+
+  // 3. Insert records
+  const { error: insErr } = await supabaseAdmin
+    .from('cleaner_service_areas')
+    .insert(records);
+
+  if (insErr) {
+    return { error: new Error(`Failed to insert cleaner_service_areas: ${insErr.message}`) };
+  }
+
+  return {};
 }
 
 /**
@@ -698,7 +908,7 @@ app.post('/api/cleaner/apply', async (req: Request, res: Response) => {
     const newUserId = created.user.id;
 
     // 3. Upsert profiles record with role 'cleaner' and status 'pending'
-    const { error: profErr } = await safeUpsertProfile({
+    const { error: profErr } = await saveProfile({
       id: newUserId,
       fullName: cleanName,
       phone: cleanPhone,
@@ -711,14 +921,17 @@ app.post('/api/cleaner/apply', async (req: Request, res: Response) => {
     }
 
     // 4. Create cleaner_applications record (safe with applicant_id / cleaner_id)
-    await safeUpsertCleanerApplication({
+    await saveCleanerApplication({
       cleanerId: newUserId,
       status: 'pending',
       createdAt: new Date().toISOString(),
     });
 
     // 5. Record proposed service localities (unapproved)
-    await safeUpsertServiceAreas(newUserId, locIds, false);
+    const { error: areaErr } = await saveCleanerServiceAreas(newUserId, locIds, false);
+    if (areaErr) {
+      console.warn('Cleaner initial service areas notice:', areaErr.message);
+    }
 
     return res.json({
       success: true,
@@ -835,8 +1048,8 @@ app.post('/api/admin/create-cleaner', async (req: Request, res: Response) => {
 
     const newUserId = created.user.id;
 
-    // Upsert profiles record safely
-    const { error: profErr } = await safeUpsertProfile({
+    // 1. Persist profiles record with supervisor_id
+    const { error: profErr } = await saveProfile({
       id: newUserId,
       fullName: cleanName,
       phone: cleanPhone,
@@ -846,11 +1059,14 @@ app.post('/api/admin/create-cleaner', async (req: Request, res: Response) => {
     });
 
     if (profErr) {
-      console.warn('Profiles upsert notice during cleaner creation:', profErr.message);
+      return res.status(500).json({
+        success: false,
+        error: `Failed to create cleaner profile: ${profErr.message}`,
+      });
     }
 
-    // Insert approved cleaner_applications record
-    await safeUpsertCleanerApplication({
+    // 2. Insert cleaner_applications record with assigned_supervisor_id
+    const { error: appErr } = await saveCleanerApplication({
       cleanerId: newUserId,
       status: cleanStatus === 'active' ? 'approved' : 'pending',
       reviewerId: authCheck.callerId,
@@ -860,14 +1076,25 @@ app.post('/api/admin/create-cleaner', async (req: Request, res: Response) => {
       createdAt: new Date().toISOString(),
     });
 
-    // Insert service areas
+    if (appErr) {
+      console.warn('Cleaner application record note:', appErr.message);
+    }
+
+    // 3. Persist authorized service areas in cleaner_service_areas
     if (serviceLocalityIds.length > 0) {
-      await safeUpsertServiceAreas(
+      const { error: areaErr } = await saveCleanerServiceAreas(
         newUserId,
         serviceLocalityIds,
         cleanStatus === 'active',
         cleanStatus === 'active' ? authCheck.callerId : null
       );
+
+      if (areaErr) {
+        return res.status(500).json({
+          success: false,
+          error: `Cleaner created, but failed to persist service areas: ${areaErr.message}`,
+        });
+      }
     }
 
     return res.json({
@@ -892,11 +1119,12 @@ app.post('/api/admin/create-cleaner', async (req: Request, res: Response) => {
 });
 
 /**
- * Administrator Endpoint: Review Cleaner Application (Approve / Reject)
- * Assigns supervisor and approved service localities upon approval.
+ * Staff Endpoint: Review Cleaner Application (Approve / Reject)
+ * Allows Admin or active Supervisor to approve cleaner applications,
+ * assign a Supervisor, and authorize service localities.
  */
 app.post('/api/admin/review-cleaner-application', async (req: Request, res: Response) => {
-  const authCheck = await verifyAdminCaller(req.headers.authorization);
+  const authCheck = await verifyStaffCaller(req.headers.authorization);
   if (!authCheck.ok) {
     return res.status(authCheck.status).json({ success: false, error: authCheck.error });
   }
@@ -934,13 +1162,17 @@ app.post('/api/admin/review-cleaner-application', async (req: Request, res: Resp
       });
     }
 
-    // Resolve cleaner ID from either applicant_id or cleaner_id
-    const cleanerId = appData.applicant_id || appData.cleaner_id;
+    // Resolve cleaner ID from cleaner_id or applicant_id
+    const cleanerId = appData.cleaner_id || appData.applicant_id;
     if (!cleanerId) {
       return res.status(400).json({ success: false, error: 'Application record is missing applicant identifier.' });
     }
 
-    const cleanSupervisorId = supervisorId && supervisorId.trim() ? supervisorId.trim() : null;
+    // Determine target supervisor: if caller is supervisor and supervisorId is not set, default to caller
+    let cleanSupervisorId = supervisorId && supervisorId.trim() ? supervisorId.trim() : null;
+    if (!cleanSupervisorId && authCheck.role === 'supervisor') {
+      cleanSupervisorId = authCheck.callerId || null;
+    }
 
     if (decision === 'approved') {
       if (cleanSupervisorId) {
@@ -958,73 +1190,91 @@ app.post('/api/admin/review-cleaner-application', async (req: Request, res: Resp
         }
       }
 
-      // Update cleaner_applications
-      await safeUpsertCleanerApplication({
+      const approvedLocs: string[] = Array.isArray(approvedLocalityIds) ? approvedLocalityIds : [];
+      if (approvedLocs.length === 0) {
+        return res.status(400).json({
+          success: false,
+          error: 'Please authorize at least one service locality for this approved cleaner.',
+        });
+      }
+
+      // 1. Update cleaner_applications with assigned_supervisor_id
+      const { error: appUpdateErr } = await saveCleanerApplication({
         cleanerId,
         status: 'approved',
         reviewerId: authCheck.callerId,
         assignedSupervisorId: cleanSupervisorId,
-        reviewNotes: notes || 'Application approved by Administrator.',
+        reviewNotes: notes || 'Application approved by staff.',
         reviewedAt: new Date().toISOString(),
       });
 
-      // Update Auth user metadata
-      const { data: authUserData } = await supabaseAdmin.auth.admin.getUserById(cleanerId);
-      if (authUserData?.user) {
-        await supabaseAdmin.auth.admin.updateUserById(cleanerId, {
-          user_metadata: {
-            ...authUserData.user.user_metadata,
-            role: 'cleaner',
-            account_status: 'active',
-            supervisor_id: cleanSupervisorId,
-            service_areas: approvedLocalityIds || [],
-          },
-          app_metadata: {
-            ...authUserData.user.app_metadata,
-            role: 'cleaner',
-            account_status: 'active',
-            supervisor_id: cleanSupervisorId,
-          },
+      if (appUpdateErr) {
+        return res.status(500).json({
+          success: false,
+          error: `Failed to update cleaner application: ${appUpdateErr.message}`,
         });
       }
 
-      // Activate cleaner profile and assign supervisor
-      await safeUpsertProfile({
-        id: cleanerId,
-        fullName: appData.cleaner_name || authUserData?.user?.user_metadata?.full_name || 'Cleaner',
-        phone: appData.cleaner_phone || authUserData?.user?.user_metadata?.phone_number || '0000000000',
-        role: 'cleaner',
-        accountStatus: 'active',
+      // 2. Persist profiles record: role='cleaner', account_status='active', supervisor_id=cleanSupervisorId
+      const { error: profUpdateErr } = await updateCleanerProfileAndSupervisor(cleanerId, {
         supervisorId: cleanSupervisorId,
+        accountStatus: 'active',
       });
 
-      // Approve selected localities
-      const approvedLocs: string[] = Array.isArray(approvedLocalityIds) ? approvedLocalityIds : [];
-      if (approvedLocs.length > 0) {
-        await safeUpsertServiceAreas(cleanerId, approvedLocs, true, authCheck.callerId);
+      if (profUpdateErr) {
+        return res.status(500).json({
+          success: false,
+          error: `Failed to update cleaner profile: ${profUpdateErr.message}`,
+        });
       }
+
+      // 3. Persist authorized service areas in cleaner_service_areas with is_approved=true
+      const { error: areaErr } = await saveCleanerServiceAreas(
+        cleanerId,
+        approvedLocs,
+        true,
+        authCheck.callerId
+      );
+
+      if (areaErr) {
+        return res.status(500).json({
+          success: false,
+          error: `Failed to persist cleaner service areas: ${areaErr.message}`,
+        });
+      }
+
+      // Update Auth user metadata
+      await supabaseAdmin.auth.admin.updateUserById(cleanerId, {
+        user_metadata: {
+          role: 'cleaner',
+          account_status: 'active',
+          supervisor_id: cleanSupervisorId,
+          service_areas: approvedLocs,
+        },
+        app_metadata: {
+          role: 'cleaner',
+          account_status: 'active',
+          supervisor_id: cleanSupervisorId,
+        },
+      }).catch(() => {});
     } else {
-      // Rejected
-      await safeUpsertCleanerApplication({
+      // Decision is 'rejected'
+      await saveCleanerApplication({
         cleanerId,
         status: 'rejected',
         reviewerId: authCheck.callerId,
-        reviewNotes: notes || 'Application rejected by Administrator.',
+        reviewNotes: notes || 'Application rejected by staff.',
         reviewedAt: new Date().toISOString(),
+      });
+
+      await updateCleanerProfileAndSupervisor(cleanerId, {
+        accountStatus: 'suspended',
       });
 
       await supabaseAdmin.auth.admin.updateUserById(cleanerId, {
         user_metadata: { account_status: 'suspended' },
         app_metadata: { account_status: 'suspended' },
       }).catch(() => {});
-
-      await supabaseAdmin
-        .from('profiles')
-        .update({
-          account_status: 'suspended',
-          updated_at: new Date().toISOString(),
-        })
-        .eq('id', cleanerId);
     }
 
     return res.json({
@@ -1043,6 +1293,7 @@ app.post('/api/admin/review-cleaner-application', async (req: Request, res: Resp
 /**
  * Administrator Endpoint: Update Cleaner Account Details
  * Change supervisor assignment, toggle active/suspended status, or update service areas.
+ * Guarantees atomic persistence of profiles.supervisor_id and cleaner_service_areas.
  */
 app.post('/api/admin/update-cleaner', async (req: Request, res: Response) => {
   const authCheck = await verifyAdminCaller(req.headers.authorization);
@@ -1071,77 +1322,91 @@ app.post('/api/admin/update-cleaner', async (req: Request, res: Response) => {
       return res.status(404).json({ success: false, error: 'Cleaner profile not found.' });
     }
 
-    const assignedSupId = supervisorId && supervisorId.trim() ? supervisorId.trim() : null;
+    // 1. Handle supervisor assignment if provided
+    let cleanSupervisorId: string | null | undefined = undefined;
+    if (supervisorId !== undefined) {
+      cleanSupervisorId = supervisorId && supervisorId.trim() ? supervisorId.trim() : null;
 
-    if (assignedSupId) {
-      const { data: supProfile } = await supabaseAdmin
-        .from('profiles')
-        .select('id, role, account_status')
-        .eq('id', assignedSupId)
-        .maybeSingle();
+      if (cleanSupervisorId) {
+        const { data: supProfile, error: supErr } = await supabaseAdmin
+          .from('profiles')
+          .select('id, role, account_status')
+          .eq('id', cleanSupervisorId)
+          .maybeSingle();
 
-      if (!supProfile || supProfile.role !== 'supervisor' || supProfile.account_status !== 'active') {
-        return res.status(400).json({
-          success: false,
-          error: 'Selected supervisor is invalid or not an active supervisor.',
-        });
+        if (supErr || !supProfile || supProfile.role !== 'supervisor' || supProfile.account_status !== 'active') {
+          return res.status(400).json({
+            success: false,
+            error: 'Selected supervisor is invalid or not an active supervisor.',
+          });
+        }
       }
     }
 
     const nextStatus = accountStatus && ['active', 'pending', 'suspended'].includes(accountStatus)
       ? accountStatus
-      : cleanerProfile.account_status;
+      : undefined;
 
-    // 1. Update Auth user metadata
+    // 2. Persist updates to profiles.supervisor_id and account_status
+    if (cleanSupervisorId !== undefined || nextStatus !== undefined) {
+      const { error: profErr } = await updateCleanerProfileAndSupervisor(cleanerId, {
+        supervisorId: cleanSupervisorId,
+        accountStatus: nextStatus,
+      });
+
+      if (profErr) {
+        return res.status(500).json({
+          success: false,
+          error: `Failed to update cleaner profile: ${profErr.message}`,
+        });
+      }
+    }
+
+    // 3. Persist authorized service areas in cleaner_service_areas if provided
+    if (Array.isArray(localityIds)) {
+      const currentActive = nextStatus ? nextStatus === 'active' : cleanerProfile.account_status === 'active';
+      const { error: areaErr } = await saveCleanerServiceAreas(
+        cleanerId,
+        localityIds,
+        currentActive,
+        authCheck.callerId
+      );
+
+      if (areaErr) {
+        return res.status(500).json({
+          success: false,
+          error: `Failed to update cleaner service areas: ${areaErr.message}`,
+        });
+      }
+    }
+
+    // 4. Update Auth user metadata
     const { data: authUserData } = await supabaseAdmin.auth.admin.getUserById(cleanerId);
     if (authUserData?.user) {
       const currentMeta = authUserData.user.user_metadata || {};
       const currentAppMeta = authUserData.user.app_metadata || {};
 
+      const finalSupId = cleanSupervisorId !== undefined ? cleanSupervisorId : cleanerProfile.supervisor_id;
+      const finalStatus = nextStatus || cleanerProfile.account_status;
+
       await supabaseAdmin.auth.admin.updateUserById(cleanerId, {
         user_metadata: {
           ...currentMeta,
-          account_status: nextStatus,
-          supervisor_id: assignedSupId,
+          account_status: finalStatus,
+          supervisor_id: finalSupId,
           service_areas: Array.isArray(localityIds) ? localityIds : currentMeta.service_areas,
         },
         app_metadata: {
           ...currentAppMeta,
-          account_status: nextStatus,
-          supervisor_id: assignedSupId,
+          account_status: finalStatus,
+          supervisor_id: finalSupId,
         },
-      });
-    }
-
-    // 2. Update profiles table
-    await safeUpsertProfile({
-      id: cleanerId,
-      fullName: cleanerProfile.full_name,
-      phone: cleanerProfile.phone || cleanerProfile.phone_number || '',
-      role: 'cleaner',
-      accountStatus: nextStatus,
-      supervisorId: assignedSupId,
-    });
-
-    // 3. Update cleaner_service_areas if provided
-    if (Array.isArray(localityIds)) {
-      try {
-        await supabaseAdmin
-          .from('cleaner_service_areas')
-          .delete()
-          .eq('cleaner_id', cleanerId);
-      } catch {
-        // Ignored
-      }
-
-      if (localityIds.length > 0) {
-        await safeUpsertServiceAreas(cleanerId, localityIds, nextStatus === 'active', authCheck.callerId);
-      }
+      }).catch(() => {});
     }
 
     return res.json({
       success: true,
-      message: 'Cleaner details successfully updated.',
+      message: 'Cleaner assignment and details successfully persisted.',
     });
   } catch (err: any) {
     return res.status(500).json({
@@ -1195,10 +1460,92 @@ app.post('/api/admin/reset-cleaner-password', async (req: Request, res: Response
 });
 
 /**
+ * Authenticated Cleaner Profile Endpoint:
+ * Returns the cleaner's verified profile with supervisor name and authorized service areas with locality names.
+ */
+app.get('/api/cleaner/my-profile', async (req: Request, res: Response) => {
+  const authHeader = req.headers.authorization;
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    return res.status(401).json({ success: false, error: 'Missing Authorization Bearer token.' });
+  }
+
+  const token = authHeader.replace('Bearer ', '').trim();
+  if (!supabaseAdmin) {
+    return res.status(503).json({ success: false, error: 'Supabase admin client unavailable.' });
+  }
+
+  try {
+    const { data: userData, error: userError } = await supabaseAdmin.auth.getUser(token);
+    if (userError || !userData?.user) {
+      return res.status(401).json({ success: false, error: 'Unauthorized session.' });
+    }
+
+    const cleanerId = userData.user.id;
+
+    // Fetch cleaner profile
+    const { data: profile } = await supabaseAdmin
+      .from('profiles')
+      .select('*')
+      .eq('id', cleanerId)
+      .maybeSingle();
+
+    let supervisorName: string | null = null;
+    if (profile?.supervisor_id) {
+      const { data: supProf } = await supabaseAdmin
+        .from('profiles')
+        .select('full_name')
+        .eq('id', profile.supervisor_id)
+        .maybeSingle();
+      supervisorName = supProf?.full_name || null;
+    }
+
+    // Fetch cleaner service areas
+    const { data: saData } = await supabaseAdmin
+      .from('cleaner_service_areas')
+      .select('*')
+      .eq('cleaner_id', cleanerId);
+
+    // Fetch localities
+    const { data: locData } = await supabaseAdmin.from('localities').select('id, name');
+    const locMap = new Map((locData || []).map((l: any) => [l.id, l.name]));
+
+    const serviceAreas = (saData || []).map((sa: any) => ({
+      id: sa.id,
+      cleanerId: sa.cleaner_id,
+      localityId: sa.locality_id,
+      localityName: locMap.get(sa.locality_id) || 'Locality',
+      isApproved: sa.is_approved,
+      approvedBy: sa.approved_by,
+      approvedAt: sa.approved_at,
+    }));
+
+    return res.json({
+      success: true,
+      profile: {
+        id: cleanerId,
+        email: userData.user.email || profile?.email || '',
+        fullName: profile?.full_name || userData.user.user_metadata?.full_name || 'Cleaner',
+        phoneNumber: profile?.phone_number || profile?.phone || '',
+        role: profile?.role || 'cleaner',
+        accountStatus: profile?.account_status || 'active',
+        supervisorId: profile?.supervisor_id || null,
+        supervisorName,
+      },
+      serviceAreas,
+    });
+  } catch (err: any) {
+    return res.status(500).json({
+      success: false,
+      error: err.message || 'Error fetching cleaner profile.',
+    });
+  }
+});
+
+/**
  * Administrator & Supervisor Directory Endpoint:
  * Fetches the unified, enriched list of all registered users (with authentic emails,
  * supervisor bindings, service area coverage, and statuses) directly from Supabase Auth + Profiles.
- * Guarantees changes persist across browser refreshes.
+ * Guarantees changes persist across browser refreshes and resolves locality names.
  */
 app.get('/api/admin/users', async (req: Request, res: Response) => {
   const authCheck = await verifyAdminCaller(req.headers.authorization);
@@ -1231,6 +1578,10 @@ app.get('/api/admin/users', async (req: Request, res: Response) => {
     let rawServiceAreas: any[] = [];
     const { data: saData } = await supabaseAdmin.from('cleaner_service_areas').select('*');
     if (saData) rawServiceAreas = saData;
+
+    // 5. Fetch localities to resolve names accurately
+    const { data: localitiesData } = await supabaseAdmin.from('localities').select('id, name');
+    const localityMap = new Map((localitiesData || []).map((l: any) => [l.id, l.name]));
 
     // 5. Construct enriched users list
     const enrichedUsers = (profiles || []).map((p: any) => {

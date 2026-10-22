@@ -19,6 +19,9 @@ import {
   validateCleanerAccessToComplaint,
   isAdministrator,
   isSupervisorOrAdmin,
+  validateCleanerAssignmentPayload,
+  formatCleanerServiceAreaRecords,
+  resolveCleanerLocalityDisplay,
 } from './rules.ts';
 
 test('validateGpsCoordinates rejects null, undefined, out of bounds, and zero island', () => {
@@ -389,6 +392,167 @@ test('Role security boundaries enforce that non-administrators cannot perform pr
   assert.equal(isSupervisorOrAdmin('administrator'), true);
   assert.equal(isSupervisorOrAdmin('admin'), true);
 });
+
+test('validateCleanerAssignmentPayload enforces valid cleanerId, optional supervisorId, valid localityIds and accountStatus', () => {
+  // Missing cleanerId
+  const missingIdRes = validateCleanerAssignmentPayload({});
+  assert.equal(missingIdRes.valid, false);
+  assert.ok(missingIdRes.errors.cleanerId);
+
+  // Invalid supervisorId type
+  const badSupRes = validateCleanerAssignmentPayload({
+    cleanerId: 'c-1',
+    supervisorId: 12345 as any,
+  });
+  assert.equal(badSupRes.valid, false);
+  assert.ok(badSupRes.errors.supervisorId);
+
+  // Invalid localityIds (not array or containing empty items)
+  const badLocRes = validateCleanerAssignmentPayload({
+    cleanerId: 'c-1',
+    localityIds: 'loc-1' as any,
+  });
+  assert.equal(badLocRes.valid, false);
+  assert.ok(badLocRes.errors.localityIds);
+
+  const emptyLocItemRes = validateCleanerAssignmentPayload({
+    cleanerId: 'c-1',
+    localityIds: ['loc-1', '  ', 'loc-2'],
+  });
+  assert.equal(emptyLocItemRes.valid, false);
+  assert.ok(emptyLocItemRes.errors.localityIds);
+
+  // Invalid account status
+  const badStatusRes = validateCleanerAssignmentPayload({
+    cleanerId: 'c-1',
+    accountStatus: 'banned',
+  });
+  assert.equal(badStatusRes.valid, false);
+  assert.ok(badStatusRes.errors.accountStatus);
+
+  // Valid assignment payload
+  const validRes = validateCleanerAssignmentPayload({
+    cleanerId: 'c-100',
+    supervisorId: 'sup-50',
+    localityIds: ['loc-1', 'loc-2'],
+    accountStatus: 'active',
+  });
+  assert.equal(validRes.valid, true);
+  assert.deepEqual(validRes.errors, {});
+});
+
+test('formatCleanerServiceAreaRecords formats exact database columns and sets approval fields consistently', () => {
+  const ts = '2026-10-22T10:00:00.000Z';
+  const records = formatCleanerServiceAreaRecords({
+    cleanerId: 'c-101',
+    localityIds: ['loc-north', 'loc-south', 'loc-north'], // duplicates must be deduplicated
+    isApproved: true,
+    approvedBy: 'admin-uuid-1',
+    timestamp: ts,
+  });
+
+  assert.equal(records.length, 2);
+  assert.deepEqual(records[0], {
+    cleaner_id: 'c-101',
+    locality_id: 'loc-north',
+    is_approved: true,
+    approved_by: 'admin-uuid-1',
+    approved_at: ts,
+    created_at: ts,
+  });
+  assert.deepEqual(records[1], {
+    cleaner_id: 'c-101',
+    locality_id: 'loc-south',
+    is_approved: true,
+    approved_by: 'admin-uuid-1',
+    approved_at: ts,
+    created_at: ts,
+  });
+
+  // Pending self-selection without approval
+  const pendingRecords = formatCleanerServiceAreaRecords({
+    cleanerId: 'c-102',
+    localityIds: ['loc-east'],
+    isApproved: false,
+    timestamp: ts,
+  });
+  assert.equal(pendingRecords.length, 1);
+  assert.equal(pendingRecords[0].is_approved, false);
+  assert.equal(pendingRecords[0].approved_by, null);
+  assert.equal(pendingRecords[0].approved_at, null);
+});
+
+test('resolveCleanerLocalityDisplay falls back gracefully to master localities list when name is unpopulated', () => {
+  const masterLocalities = [
+    { id: 'loc-1', name: 'North Ward - Sector 1' },
+    { id: 'loc-2', name: 'South Ward - Sector 4' },
+    { id: 'loc-3', name: 'Central Market Square' },
+  ];
+
+  // Already populated name
+  const resolvedDirect = resolveCleanerLocalityDisplay(
+    { localityId: 'loc-1', localityName: 'North Ward - Sector 1' },
+    masterLocalities
+  );
+  assert.equal(resolvedDirect, 'North Ward - Sector 1');
+
+  // Generic placeholder 'Locality' -> must resolve via master list
+  const resolvedPlaceholder = resolveCleanerLocalityDisplay(
+    { localityId: 'loc-2', localityName: 'Locality' },
+    masterLocalities
+  );
+  assert.equal(resolvedPlaceholder, 'South Ward - Sector 4');
+
+  // Missing or null localityName -> must resolve via master list
+  const resolvedMissing = resolveCleanerLocalityDisplay(
+    { localityId: 'loc-3', localityName: null },
+    masterLocalities
+  );
+  assert.equal(resolvedMissing, 'Central Market Square');
+
+  // Unknown locality ID -> falls back safely to 'Locality'
+  const resolvedUnknown = resolveCleanerLocalityDisplay(
+    { localityId: 'loc-unknown', localityName: null },
+    masterLocalities
+  );
+  assert.equal(resolvedUnknown, 'Locality');
+});
+
+test('Cleaner dashboard data loading correctly maps assigned supervisor and service localities', () => {
+  // Simulates loading cleaner state with resolved supervisor and service areas
+  const testCleanerProfile = {
+    id: 'c-200',
+    fullName: 'Ravi Kumar',
+    email: 'ravi.k@civicpickup.org',
+    role: 'cleaner',
+    supervisorId: 'sup-900',
+    supervisorName: 'Priya Sharma (Zonal Lead)',
+  };
+
+  const rawDbServiceAreas = [
+    { cleanerId: 'c-200', localityId: 'loc-1', localityName: null, isApproved: true },
+    { cleanerId: 'c-200', localityId: 'loc-2', localityName: '', isApproved: true },
+    { cleanerId: 'c-200', localityId: 'loc-3', localityName: 'Locality', isApproved: false },
+  ];
+
+  const localities = [
+    { id: 'loc-1', name: 'North Ward - Sector 1' },
+    { id: 'loc-2', name: 'South Ward - Sector 4' },
+    { id: 'loc-3', name: 'Central Market Square' },
+  ];
+
+  const mappedAreas = rawDbServiceAreas.map((sa) => ({
+    ...sa,
+    localityName: resolveCleanerLocalityDisplay(sa, localities),
+  }));
+
+  assert.equal(testCleanerProfile.supervisorName, 'Priya Sharma (Zonal Lead)');
+  assert.equal(mappedAreas[0].localityName, 'North Ward - Sector 1');
+  assert.equal(mappedAreas[1].localityName, 'South Ward - Sector 4');
+  assert.equal(mappedAreas[2].localityName, 'Central Market Square');
+  assert.equal(mappedAreas.filter((a) => a.isApproved).length, 2);
+});
+
 
 
 
