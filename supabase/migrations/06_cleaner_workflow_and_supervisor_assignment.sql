@@ -1,109 +1,144 @@
 -- ============================================================================
 -- 06_cleaner_workflow_and_supervisor_assignment.sql
--- Waste Pickup Request Portal: Cleaner Management, Supervisor Assignment & Review
+-- Waste Pickup Request Portal: Cleaner Workflows, Supervisor Assignment & Permission Hardening
 -- Execution Order: 6 of 6
 -- ============================================================================
 
--- 1. Add supervisor_id to profiles (1-to-many: a cleaner is assigned to a supervisor)
+-- 1. Ensure user_role ENUM supports both 'admin' and 'administrator' for compatibility
+DO $$ BEGIN
+    ALTER TYPE user_role ADD VALUE IF NOT EXISTS 'administrator';
+EXCEPTION
+    WHEN duplicate_object THEN null;
+    WHEN undefined_object THEN null;
+END $$;
+
+-- 2. Add supervisor_id to profiles (1-to-many cleaner-to-supervisor assignment)
 ALTER TABLE public.profiles
 ADD COLUMN IF NOT EXISTS supervisor_id UUID REFERENCES public.profiles(id) ON DELETE SET NULL;
 
 CREATE INDEX IF NOT EXISTS idx_profiles_supervisor ON public.profiles(supervisor_id);
 
--- 2. Add assigned_supervisor_id to cleaner_applications
+-- Ensure both 'phone' and 'phone_number' columns can coexist if needed
+DO $$ BEGIN
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'profiles' AND column_name = 'phone') THEN
+        ALTER TABLE public.profiles ADD COLUMN phone TEXT;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'profiles' AND column_name = 'phone_number') THEN
+        ALTER TABLE public.profiles ADD COLUMN phone_number TEXT;
+    END IF;
+END $$;
+
+-- 3. Add assigned_supervisor_id to cleaner_applications
 ALTER TABLE public.cleaner_applications
 ADD COLUMN IF NOT EXISTS assigned_supervisor_id UUID REFERENCES public.profiles(id) ON DELETE SET NULL;
 
--- 3. Enhance cleaner application review to link supervisor and service areas
-CREATE OR REPLACE FUNCTION public.review_cleaner_application_v2(
-    p_application_id UUID,
-    p_decision TEXT, -- 'approved' or 'rejected'
-    p_approved_locality_ids UUID[] DEFAULT ARRAY[]::UUID[],
-    p_supervisor_id UUID DEFAULT NULL,
-    p_notes TEXT DEFAULT NULL
-)
-RETURNS JSONB AS $$
-DECLARE
-    v_caller_role user_role;
-    v_app public.cleaner_applications%ROWTYPE;
-    v_loc_id UUID;
-    v_sup public.profiles%ROWTYPE;
+CREATE INDEX IF NOT EXISTS idx_cleaner_applications_assigned_supervisor
+ON public.cleaner_applications(assigned_supervisor_id);
+
+-- 4. Grant table & sequence privileges to service_role, authenticated, and anon roles
+GRANT USAGE ON SCHEMA public TO postgres, anon, authenticated, service_role;
+GRANT ALL ON ALL TABLES IN SCHEMA public TO postgres, anon, authenticated, service_role;
+GRANT ALL ON ALL SEQUENCES IN SCHEMA public TO postgres, anon, authenticated, service_role;
+GRANT ALL ON ALL ROUTINES IN SCHEMA public TO postgres, anon, authenticated, service_role;
+
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO postgres, anon, authenticated, service_role;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON SEQUENCES TO postgres, anon, authenticated, service_role;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON ROUTINES TO postgres, anon, authenticated, service_role;
+
+-- 5. Safe Seed Localities (Handles both is_active and active column names)
+DO $$
 BEGIN
-    SELECT role INTO v_caller_role FROM public.profiles WHERE id = auth.uid();
-    IF v_caller_role NOT IN ('admin', 'supervisor') THEN
-        RAISE EXCEPTION 'Access denied: Only administrator or supervisor can review cleaner applications.';
+    IF EXISTS (
+        SELECT 1 FROM information_schema.columns 
+        WHERE table_schema = 'public' AND table_name = 'localities' AND column_name = 'is_active'
+    ) THEN
+        INSERT INTO public.localities (id, name, is_active)
+        VALUES
+            ('a0000000-0000-0000-0000-000000000001', 'North Ward - Sector 1', true),
+            ('a0000000-0000-0000-0000-000000000002', 'North Ward - Sector 2', true),
+            ('a0000000-0000-0000-0000-000000000003', 'South Ward - Sector 4', true),
+            ('a0000000-0000-0000-0000-000000000004', 'East Commercial District', true),
+            ('a0000000-0000-0000-0000-000000000005', 'West Residential Zone', true),
+            ('a0000000-0000-0000-0000-000000000006', 'Central Market Square', true),
+            ('a0000000-0000-0000-0000-000000000007', 'Campus & University Enclave', true),
+            ('a0000000-0000-0000-0000-000000000008', 'Industrial Estate Area', true)
+        ON CONFLICT (name) DO NOTHING;
+    ELSIF EXISTS (
+        SELECT 1 FROM information_schema.columns 
+        WHERE table_schema = 'public' AND table_name = 'localities' AND column_name = 'active'
+    ) THEN
+        INSERT INTO public.localities (id, name, active)
+        VALUES
+            ('a0000000-0000-0000-0000-000000000001', 'North Ward - Sector 1', true),
+            ('a0000000-0000-0000-0000-000000000002', 'North Ward - Sector 2', true),
+            ('a0000000-0000-0000-0000-000000000003', 'South Ward - Sector 4', true),
+            ('a0000000-0000-0000-0000-000000000004', 'East Commercial District', true),
+            ('a0000000-0000-0000-0000-000000000005', 'West Residential Zone', true),
+            ('a0000000-0000-0000-0000-000000000006', 'Central Market Square', true),
+            ('a0000000-0000-0000-0000-000000000007', 'Campus & University Enclave', true),
+            ('a0000000-0000-0000-0000-000000000008', 'Industrial Estate Area', true)
+        ON CONFLICT (name) DO NOTHING;
     END IF;
+END $$;
 
-    SELECT * INTO v_app FROM public.cleaner_applications WHERE id = p_application_id;
-    IF NOT FOUND THEN
-        RAISE EXCEPTION 'Cleaner application not found.';
-    END IF;
+-- 6. Helper function to check admin role (supports both 'administrator' and 'admin')
+CREATE OR REPLACE FUNCTION public.current_user_role()
+RETURNS TEXT AS $$
+    SELECT role::text FROM public.profiles WHERE id = auth.uid();
+$$ LANGUAGE sql STABLE SECURITY DEFINER;
 
-    IF v_app.status != 'pending' THEN
-        RAISE EXCEPTION 'This application has already been processed (current status: %).', v_app.status;
-    END IF;
+CREATE OR REPLACE FUNCTION public.is_admin()
+RETURNS BOOLEAN AS $$
+    SELECT EXISTS (
+        SELECT 1 FROM public.profiles 
+        WHERE id = auth.uid() 
+        AND role::text IN ('administrator', 'admin')
+        AND account_status::text = 'active'
+    );
+$$ LANGUAGE sql STABLE SECURITY DEFINER;
 
-    IF p_decision NOT IN ('approved', 'rejected') THEN
-        RAISE EXCEPTION 'Invalid decision: must be approved or rejected.';
-    END IF;
+-- 7. RLS Policy Updates: Ensure 'administrator' has full administrative rights
+DROP POLICY IF EXISTS "Admins can manage profiles" ON public.profiles;
+CREATE POLICY "Admins can manage profiles"
+ON public.profiles FOR ALL
+TO authenticated
+USING (public.is_admin())
+WITH CHECK (public.is_admin());
 
-    -- Validate supervisor if provided for approval
-    IF p_decision = 'approved' AND p_supervisor_id IS NOT NULL THEN
-        SELECT * INTO v_sup FROM public.profiles WHERE id = p_supervisor_id;
-        IF NOT FOUND OR v_sup.role != 'supervisor' OR v_sup.account_status != 'active' THEN
-            RAISE EXCEPTION 'Selected supervisor is invalid or inactive.';
-        END IF;
-    END IF;
-
-    UPDATE public.cleaner_applications
-    SET 
-        status = p_decision,
-        reviewer_id = auth.uid(),
-        assigned_supervisor_id = p_supervisor_id,
-        review_notes = p_notes,
-        reviewed_at = now()
-    WHERE id = p_application_id;
-
-    IF p_decision = 'approved' THEN
-        UPDATE public.profiles
-        SET 
-            role = 'cleaner',
-            account_status = 'active',
-            supervisor_id = p_supervisor_id,
-            updated_at = now()
-        WHERE id = v_app.cleaner_id;
-
-        -- Approve selected localities
-        IF array_length(p_approved_locality_ids, 1) > 0 THEN
-            FOREACH v_loc_id IN ARRAY p_approved_locality_ids LOOP
-                INSERT INTO public.cleaner_service_areas (cleaner_id, locality_id, is_approved, approved_by, approved_at)
-                VALUES (v_app.cleaner_id, v_loc_id, true, auth.uid(), now())
-                ON CONFLICT (cleaner_id, locality_id)
-                DO UPDATE SET 
-                    is_approved = TRUE,
-                    approved_by = auth.uid(),
-                    approved_at = now();
-            END LOOP;
-        END IF;
-    ELSIF p_decision = 'rejected' THEN
-        UPDATE public.profiles
-        SET 
-            account_status = 'suspended',
-            updated_at = now()
-        WHERE id = v_app.cleaner_id;
-    END IF;
-
-    RETURN jsonb_build_object('success', true, 'status', p_decision);
-END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
-
--- 4. RLS: Permit cleaners to read their assigned supervisor's profile details
 DROP POLICY IF EXISTS "Users can read own profile" ON public.profiles;
 CREATE POLICY "Users can read own profile"
 ON public.profiles FOR SELECT
 TO authenticated
 USING (
     id = auth.uid() OR
-    public.current_user_role() IN ('supervisor', 'admin') OR
+    public.is_admin() OR
+    public.current_user_role() = 'supervisor' OR
     id = (SELECT p.supervisor_id FROM public.profiles p WHERE p.id = auth.uid())
 );
+
+DROP POLICY IF EXISTS "Admin modify localities" ON public.localities;
+CREATE POLICY "Admin modify localities"
+ON public.localities FOR ALL
+TO authenticated
+USING (public.is_admin())
+WITH CHECK (public.is_admin());
+
+DROP POLICY IF EXISTS "Read active localities" ON public.localities;
+CREATE POLICY "Read active localities"
+ON public.localities FOR SELECT
+TO authenticated
+USING (true);
+
+DROP POLICY IF EXISTS "Staff manage cleaner applications" ON public.cleaner_applications;
+CREATE POLICY "Staff manage cleaner applications"
+ON public.cleaner_applications FOR ALL
+TO authenticated
+USING (public.is_admin() OR public.current_user_role() = 'supervisor')
+WITH CHECK (public.is_admin() OR public.current_user_role() = 'supervisor');
+
+DROP POLICY IF EXISTS "Staff manage cleaner service areas" ON public.cleaner_service_areas;
+CREATE POLICY "Staff manage cleaner service areas"
+ON public.cleaner_service_areas FOR ALL
+TO authenticated
+USING (public.is_admin() OR public.current_user_role() = 'supervisor')
+WITH CHECK (public.is_admin() OR public.current_user_role() = 'supervisor');

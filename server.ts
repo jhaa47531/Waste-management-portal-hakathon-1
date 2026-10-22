@@ -477,6 +477,147 @@ async function verifyAdminCaller(
 }
 
 /**
+ * Safe Profile Upsert Helper
+ * Handles 'phone' vs 'phone_number' and 'supervisor_id' column differences safely.
+ */
+async function safeUpsertProfile(data: {
+  id: string;
+  fullName: string;
+  phone: string;
+  role: 'resident' | 'cleaner' | 'supervisor' | 'administrator';
+  accountStatus: 'active' | 'pending' | 'suspended';
+  supervisorId?: string | null;
+}): Promise<{ error?: any }> {
+  if (!supabaseAdmin) return { error: new Error('No admin client') };
+
+  const basePayload: Record<string, any> = {
+    id: data.id,
+    full_name: data.fullName,
+    role: data.role,
+    account_status: data.accountStatus,
+    updated_at: new Date().toISOString(),
+  };
+
+  // Attempt 1: phone + supervisor_id
+  const payload1: Record<string, any> = { ...basePayload, phone: data.phone };
+  if (data.supervisorId) payload1.supervisor_id = data.supervisorId;
+
+  let { error } = await supabaseAdmin.from('profiles').upsert(payload1, { onConflict: 'id' });
+
+  // If supervisor_id column does not exist in profiles table, retry without supervisor_id
+  if (error && (error.message?.includes('supervisor_id') || error.code === 'PGRST204')) {
+    delete payload1.supervisor_id;
+    const res2 = await supabaseAdmin.from('profiles').upsert(payload1, { onConflict: 'id' });
+    error = res2.error;
+  }
+
+  // If 'phone' column failed, retry with 'phone_number'
+  if (error && (error.message?.includes("'phone'") || error.code === 'PGRST204')) {
+    const payload2: Record<string, any> = { ...basePayload, phone_number: data.phone };
+    if (data.supervisorId) payload2.supervisor_id = data.supervisorId;
+    let res3 = await supabaseAdmin.from('profiles').upsert(payload2, { onConflict: 'id' });
+    if (res3.error && (res3.error.message?.includes('supervisor_id') || res3.error.code === 'PGRST204')) {
+      delete payload2.supervisor_id;
+      res3 = await supabaseAdmin.from('profiles').upsert(payload2, { onConflict: 'id' });
+    }
+    error = res3.error;
+  }
+
+  return { error };
+}
+
+/**
+ * Safe Cleaner Application Upsert Helper
+ * Handles 'applicant_id' vs 'cleaner_id', 'reviewed_by' vs 'reviewer_id', 'review_note' vs 'review_notes'.
+ */
+async function safeUpsertCleanerApplication(data: {
+  cleanerId: string;
+  status: 'pending' | 'approved' | 'rejected';
+  reviewerId?: string | null;
+  assignedSupervisorId?: string | null;
+  reviewNotes?: string | null;
+  createdAt?: string;
+  reviewedAt?: string | null;
+}): Promise<{ error?: any }> {
+  if (!supabaseAdmin) return { error: new Error('No admin client') };
+
+  const nowIso = new Date().toISOString();
+
+  // Variant A: applicant_id, reviewed_by, review_note (live table schema)
+  const payloadA: Record<string, any> = {
+    applicant_id: data.cleanerId,
+    status: data.status,
+    created_at: data.createdAt || nowIso,
+  };
+  if (data.reviewerId) payloadA.reviewed_by = data.reviewerId;
+  if (data.reviewNotes) payloadA.review_note = data.reviewNotes;
+  if (data.reviewedAt) payloadA.reviewed_at = data.reviewedAt;
+
+  let { error } = await supabaseAdmin
+    .from('cleaner_applications')
+    .upsert(payloadA, { onConflict: 'applicant_id' });
+
+  // Variant B: cleaner_id, reviewer_id, review_notes (initial migration schema)
+  if (error && (error.message?.includes('applicant_id') || error.code === 'PGRST204' || error.message?.includes('violates'))) {
+    const payloadB: Record<string, any> = {
+      cleaner_id: data.cleanerId,
+      status: data.status,
+      created_at: data.createdAt || nowIso,
+    };
+    if (data.reviewerId) payloadB.reviewer_id = data.reviewerId;
+    if (data.assignedSupervisorId) payloadB.assigned_supervisor_id = data.assignedSupervisorId;
+    if (data.reviewNotes) payloadB.review_notes = data.reviewNotes;
+    if (data.reviewedAt) payloadB.reviewed_at = data.reviewedAt;
+
+    let resB = await supabaseAdmin
+      .from('cleaner_applications')
+      .upsert(payloadB, { onConflict: 'cleaner_id' });
+
+    if (resB.error && resB.error.message?.includes('assigned_supervisor_id')) {
+      delete payloadB.assigned_supervisor_id;
+      resB = await supabaseAdmin.from('cleaner_applications').upsert(payloadB, { onConflict: 'cleaner_id' });
+    }
+    error = resB.error;
+  }
+
+  return { error };
+}
+
+/**
+ * Safe Service Areas Upsert Helper
+ */
+async function safeUpsertServiceAreas(
+  cleanerId: string,
+  localityIds: string[],
+  isApproved: boolean,
+  approvedBy?: string | null
+): Promise<void> {
+  if (!supabaseAdmin || !Array.isArray(localityIds) || localityIds.length === 0) return;
+
+  const nowIso = new Date().toISOString();
+  for (const locId of localityIds) {
+    const payload: Record<string, any> = {
+      cleaner_id: cleanerId,
+      locality_id: locId,
+      is_approved: isApproved,
+      created_at: nowIso,
+    };
+    if (isApproved && approvedBy) {
+      payload.approved_by = approvedBy;
+      payload.approved_at = nowIso;
+    }
+
+    try {
+      await supabaseAdmin
+        .from('cleaner_service_areas')
+        .upsert(payload, { onConflict: 'cleaner_id,locality_id' });
+    } catch (err: any) {
+      console.warn('Service area upsert notice:', err?.message || err);
+    }
+  }
+}
+
+/**
  * PATH A: Cleaner Self-Registration Endpoint
  * Allows a cleaner candidate to submit their registration and preferred service localities.
  * Automatically confirms Auth email server-side to avoid SMTP delivery failures.
@@ -535,10 +676,14 @@ app.post('/api/cleaner/apply', async (req: Request, res: Response) => {
       user_metadata: {
         full_name: cleanName,
         phone_number: cleanPhone,
+        phone: cleanPhone,
         role: 'cleaner',
+        account_status: 'pending',
+        service_areas: locIds,
       },
       app_metadata: {
         role: 'cleaner',
+        account_status: 'pending',
       },
     });
 
@@ -552,45 +697,27 @@ app.post('/api/cleaner/apply', async (req: Request, res: Response) => {
     const newUserId = created.user.id;
 
     // 3. Upsert profiles record with role 'cleaner' and status 'pending'
-    await supabaseAdmin
-      .from('profiles')
-      .upsert(
-        {
-          id: newUserId,
-          full_name: cleanName,
-          phone_number: cleanPhone,
-          role: 'cleaner',
-          account_status: 'pending',
-          updated_at: new Date().toISOString(),
-        },
-        { onConflict: 'id' }
-      );
+    const { error: profErr } = await safeUpsertProfile({
+      id: newUserId,
+      fullName: cleanName,
+      phone: cleanPhone,
+      role: 'cleaner',
+      accountStatus: 'pending',
+    });
 
-    // 4. Create cleaner_applications record
-    await supabaseAdmin
-      .from('cleaner_applications')
-      .upsert(
-        {
-          cleaner_id: newUserId,
-          status: 'pending',
-          created_at: new Date().toISOString(),
-        },
-        { onConflict: 'cleaner_id' }
-      );
+    if (profErr) {
+      console.warn('Profile upsert notice during cleaner application:', profErr.message);
+    }
+
+    // 4. Create cleaner_applications record (safe with applicant_id / cleaner_id)
+    await safeUpsertCleanerApplication({
+      cleanerId: newUserId,
+      status: 'pending',
+      createdAt: new Date().toISOString(),
+    });
 
     // 5. Record proposed service localities (unapproved)
-    for (const locId of locIds) {
-      await supabaseAdmin
-        .from('cleaner_service_areas')
-        .upsert(
-          {
-            cleaner_id: newUserId,
-            locality_id: locId,
-            is_approved: false,
-          },
-          { onConflict: 'cleaner_id,locality_id' }
-        );
-    }
+    await safeUpsertServiceAreas(newUserId, locIds, false);
 
     return res.json({
       success: true,
@@ -677,7 +804,7 @@ app.post('/api/admin/create-cleaner', async (req: Request, res: Response) => {
       });
     }
 
-    // Create Supabase Auth user
+    // Create Supabase Auth user with complete metadata
     const { data: created, error: createError } = await supabaseAdmin.auth.admin.createUser({
       email: cleanEmail,
       password: cleanPassword,
@@ -685,10 +812,16 @@ app.post('/api/admin/create-cleaner', async (req: Request, res: Response) => {
       user_metadata: {
         full_name: cleanName,
         phone_number: cleanPhone,
+        phone: cleanPhone,
         role: 'cleaner',
+        account_status: cleanStatus,
+        supervisor_id: assignedSupervisorId,
+        service_areas: serviceLocalityIds,
       },
       app_metadata: {
         role: 'cleaner',
+        account_status: cleanStatus,
+        supervisor_id: assignedSupervisorId,
       },
     });
 
@@ -701,55 +834,39 @@ app.post('/api/admin/create-cleaner', async (req: Request, res: Response) => {
 
     const newUserId = created.user.id;
 
-    // Upsert profiles record
-    const profileData: Record<string, any> = {
+    // Upsert profiles record safely
+    const { error: profErr } = await safeUpsertProfile({
       id: newUserId,
-      full_name: cleanName,
-      phone_number: cleanPhone,
+      fullName: cleanName,
+      phone: cleanPhone,
       role: 'cleaner',
-      account_status: cleanStatus,
-      supervisor_id: assignedSupervisorId,
-      updated_at: new Date().toISOString(),
-    };
-
-    const { error: profErr } = await supabaseAdmin
-      .from('profiles')
-      .upsert(profileData, { onConflict: 'id' });
+      accountStatus: cleanStatus,
+      supervisorId: assignedSupervisorId,
+    });
 
     if (profErr) {
-      console.warn('Profiles upsert warning:', profErr.message);
+      console.warn('Profiles upsert notice during cleaner creation:', profErr.message);
     }
 
     // Insert approved cleaner_applications record
-    await supabaseAdmin
-      .from('cleaner_applications')
-      .upsert(
-        {
-          cleaner_id: newUserId,
-          status: cleanStatus === 'active' ? 'approved' : 'pending',
-          reviewer_id: authCheck.callerId,
-          assigned_supervisor_id: assignedSupervisorId,
-          review_notes: 'Created directly by Administrator.',
-          reviewed_at: cleanStatus === 'active' ? new Date().toISOString() : null,
-          created_at: new Date().toISOString(),
-        },
-        { onConflict: 'cleaner_id' }
-      );
+    await safeUpsertCleanerApplication({
+      cleanerId: newUserId,
+      status: cleanStatus === 'active' ? 'approved' : 'pending',
+      reviewerId: authCheck.callerId,
+      assignedSupervisorId,
+      reviewNotes: 'Created directly by Administrator.',
+      reviewedAt: cleanStatus === 'active' ? new Date().toISOString() : null,
+      createdAt: new Date().toISOString(),
+    });
 
     // Insert service areas
-    for (const locId of serviceLocalityIds) {
-      await supabaseAdmin
-        .from('cleaner_service_areas')
-        .upsert(
-          {
-            cleaner_id: newUserId,
-            locality_id: locId,
-            is_approved: cleanStatus === 'active',
-            approved_by: cleanStatus === 'active' ? authCheck.callerId : null,
-            approved_at: cleanStatus === 'active' ? new Date().toISOString() : null,
-          },
-          { onConflict: 'cleaner_id,locality_id' }
-        );
+    if (serviceLocalityIds.length > 0) {
+      await safeUpsertServiceAreas(
+        newUserId,
+        serviceLocalityIds,
+        cleanStatus === 'active',
+        cleanStatus === 'active' ? authCheck.callerId : null
+      );
     }
 
     return res.json({
@@ -816,7 +933,12 @@ app.post('/api/admin/review-cleaner-application', async (req: Request, res: Resp
       });
     }
 
-    const cleanerId = appData.cleaner_id;
+    // Resolve cleaner ID from either applicant_id or cleaner_id
+    const cleanerId = appData.applicant_id || appData.cleaner_id;
+    if (!cleanerId) {
+      return res.status(400).json({ success: false, error: 'Application record is missing applicant identifier.' });
+    }
+
     const cleanSupervisorId = supervisorId && supervisorId.trim() ? supervisorId.trim() : null;
 
     if (decision === 'approved') {
@@ -836,55 +958,64 @@ app.post('/api/admin/review-cleaner-application', async (req: Request, res: Resp
       }
 
       // Update cleaner_applications
-      await supabaseAdmin
-        .from('cleaner_applications')
-        .update({
-          status: 'approved',
-          reviewer_id: authCheck.callerId,
-          assigned_supervisor_id: cleanSupervisorId,
-          review_notes: notes || null,
-          reviewed_at: new Date().toISOString(),
-        })
-        .eq('id', applicationId);
+      await safeUpsertCleanerApplication({
+        cleanerId,
+        status: 'approved',
+        reviewerId: authCheck.callerId,
+        assignedSupervisorId: cleanSupervisorId,
+        reviewNotes: notes || 'Application approved by Administrator.',
+        reviewedAt: new Date().toISOString(),
+      });
+
+      // Update Auth user metadata
+      const { data: authUserData } = await supabaseAdmin.auth.admin.getUserById(cleanerId);
+      if (authUserData?.user) {
+        await supabaseAdmin.auth.admin.updateUserById(cleanerId, {
+          user_metadata: {
+            ...authUserData.user.user_metadata,
+            role: 'cleaner',
+            account_status: 'active',
+            supervisor_id: cleanSupervisorId,
+            service_areas: approvedLocalityIds || [],
+          },
+          app_metadata: {
+            ...authUserData.user.app_metadata,
+            role: 'cleaner',
+            account_status: 'active',
+            supervisor_id: cleanSupervisorId,
+          },
+        });
+      }
 
       // Activate cleaner profile and assign supervisor
-      await supabaseAdmin
-        .from('profiles')
-        .update({
-          role: 'cleaner',
-          account_status: 'active',
-          supervisor_id: cleanSupervisorId,
-          updated_at: new Date().toISOString(),
-        })
-        .eq('id', cleanerId);
+      await safeUpsertProfile({
+        id: cleanerId,
+        fullName: appData.cleaner_name || authUserData?.user?.user_metadata?.full_name || 'Cleaner',
+        phone: appData.cleaner_phone || authUserData?.user?.user_metadata?.phone_number || '0000000000',
+        role: 'cleaner',
+        accountStatus: 'active',
+        supervisorId: cleanSupervisorId,
+      });
 
       // Approve selected localities
       const approvedLocs: string[] = Array.isArray(approvedLocalityIds) ? approvedLocalityIds : [];
-      for (const locId of approvedLocs) {
-        await supabaseAdmin
-          .from('cleaner_service_areas')
-          .upsert(
-            {
-              cleaner_id: cleanerId,
-              locality_id: locId,
-              is_approved: true,
-              approved_by: authCheck.callerId,
-              approved_at: new Date().toISOString(),
-            },
-            { onConflict: 'cleaner_id,locality_id' }
-          );
+      if (approvedLocs.length > 0) {
+        await safeUpsertServiceAreas(cleanerId, approvedLocs, true, authCheck.callerId);
       }
     } else {
       // Rejected
-      await supabaseAdmin
-        .from('cleaner_applications')
-        .update({
-          status: 'rejected',
-          reviewer_id: authCheck.callerId,
-          review_notes: notes || 'Application rejected by Administrator.',
-          reviewed_at: new Date().toISOString(),
-        })
-        .eq('id', applicationId);
+      await safeUpsertCleanerApplication({
+        cleanerId,
+        status: 'rejected',
+        reviewerId: authCheck.callerId,
+        reviewNotes: notes || 'Application rejected by Administrator.',
+        reviewedAt: new Date().toISOString(),
+      });
+
+      await supabaseAdmin.auth.admin.updateUserById(cleanerId, {
+        user_metadata: { account_status: 'suspended' },
+        app_metadata: { account_status: 'suspended' },
+      }).catch(() => {});
 
       await supabaseAdmin
         .from('profiles')
@@ -939,59 +1070,71 @@ app.post('/api/admin/update-cleaner', async (req: Request, res: Response) => {
       return res.status(404).json({ success: false, error: 'Cleaner profile not found.' });
     }
 
-    const updates: Record<string, any> = {
-      updated_at: new Date().toISOString(),
-    };
+    const assignedSupId = supervisorId && supervisorId.trim() ? supervisorId.trim() : null;
 
-    if (accountStatus && ['active', 'pending', 'suspended'].includes(accountStatus)) {
-      updates.account_status = accountStatus;
-    }
+    if (assignedSupId) {
+      const { data: supProfile } = await supabaseAdmin
+        .from('profiles')
+        .select('id, role, account_status')
+        .eq('id', assignedSupId)
+        .maybeSingle();
 
-    if (supervisorId !== undefined) {
-      if (supervisorId && supervisorId.trim()) {
-        const { data: supProfile } = await supabaseAdmin
-          .from('profiles')
-          .select('id, role, account_status')
-          .eq('id', supervisorId.trim())
-          .maybeSingle();
-
-        if (!supProfile || supProfile.role !== 'supervisor' || supProfile.account_status !== 'active') {
-          return res.status(400).json({
-            success: false,
-            error: 'Selected supervisor is invalid or not an active supervisor.',
-          });
-        }
-        updates.supervisor_id = supervisorId.trim();
-      } else {
-        updates.supervisor_id = null;
+      if (!supProfile || supProfile.role !== 'supervisor' || supProfile.account_status !== 'active') {
+        return res.status(400).json({
+          success: false,
+          error: 'Selected supervisor is invalid or not an active supervisor.',
+        });
       }
     }
 
-    const { error: updateErr } = await supabaseAdmin
-      .from('profiles')
-      .update(updates)
-      .eq('id', cleanerId);
+    const nextStatus = accountStatus && ['active', 'pending', 'suspended'].includes(accountStatus)
+      ? accountStatus
+      : cleanerProfile.account_status;
 
-    if (updateErr) {
-      return res.status(500).json({ success: false, error: updateErr.message });
+    // 1. Update Auth user metadata
+    const { data: authUserData } = await supabaseAdmin.auth.admin.getUserById(cleanerId);
+    if (authUserData?.user) {
+      const currentMeta = authUserData.user.user_metadata || {};
+      const currentAppMeta = authUserData.user.app_metadata || {};
+
+      await supabaseAdmin.auth.admin.updateUserById(cleanerId, {
+        user_metadata: {
+          ...currentMeta,
+          account_status: nextStatus,
+          supervisor_id: assignedSupId,
+          service_areas: Array.isArray(localityIds) ? localityIds : currentMeta.service_areas,
+        },
+        app_metadata: {
+          ...currentAppMeta,
+          account_status: nextStatus,
+          supervisor_id: assignedSupId,
+        },
+      });
     }
 
-    // Update service areas if specified
-    if (Array.isArray(localityIds)) {
-      // First unapprove or delete current areas
-      await supabaseAdmin
-        .from('cleaner_service_areas')
-        .delete()
-        .eq('cleaner_id', cleanerId);
+    // 2. Update profiles table
+    await safeUpsertProfile({
+      id: cleanerId,
+      fullName: cleanerProfile.full_name,
+      phone: cleanerProfile.phone || cleanerProfile.phone_number || '',
+      role: 'cleaner',
+      accountStatus: nextStatus,
+      supervisorId: assignedSupId,
+    });
 
-      for (const locId of localityIds) {
-        await supabaseAdmin.from('cleaner_service_areas').insert({
-          cleaner_id: cleanerId,
-          locality_id: locId,
-          is_approved: true,
-          approved_by: authCheck.callerId,
-          approved_at: new Date().toISOString(),
-        });
+    // 3. Update cleaner_service_areas if provided
+    if (Array.isArray(localityIds)) {
+      try {
+        await supabaseAdmin
+          .from('cleaner_service_areas')
+          .delete()
+          .eq('cleaner_id', cleanerId);
+      } catch {
+        // Ignored
+      }
+
+      if (localityIds.length > 0) {
+        await safeUpsertServiceAreas(cleanerId, localityIds, nextStatus === 'active', authCheck.callerId);
       }
     }
 
@@ -1046,6 +1189,124 @@ app.post('/api/admin/reset-cleaner-password', async (req: Request, res: Response
     return res.status(500).json({
       success: false,
       error: err.message || 'Server error resetting password.',
+    });
+  }
+});
+
+/**
+ * Administrator & Supervisor Directory Endpoint:
+ * Fetches the unified, enriched list of all registered users (with authentic emails,
+ * supervisor bindings, service area coverage, and statuses) directly from Supabase Auth + Profiles.
+ * Guarantees changes persist across browser refreshes.
+ */
+app.get('/api/admin/users', async (req: Request, res: Response) => {
+  const authCheck = await verifyAdminCaller(req.headers.authorization);
+  if (!authCheck.ok) {
+    return res.status(authCheck.status).json({ success: false, error: authCheck.error });
+  }
+
+  if (!supabaseAdmin) {
+    return res.status(503).json({ success: false, error: 'Supabase admin client unavailable.' });
+  }
+
+  try {
+    // 1. Fetch profiles
+    const { data: profiles, error: pErr } = await supabaseAdmin.from('profiles').select('*');
+    if (pErr) {
+      return res.status(500).json({ success: false, error: pErr.message });
+    }
+
+    // 2. Fetch Auth user registry for emails and metadata
+    const { data: authData } = await supabaseAdmin.auth.admin.listUsers({ page: 1, perPage: 1000 });
+    const authUsers = authData?.users || [];
+    const authMap = new Map(authUsers.map((u) => [u.id, u]));
+
+    // 3. Fetch cleaner_applications
+    let rawApps: any[] = [];
+    const { data: appsData } = await supabaseAdmin.from('cleaner_applications').select('*');
+    if (appsData) rawApps = appsData;
+
+    // 4. Fetch cleaner_service_areas
+    let rawServiceAreas: any[] = [];
+    const { data: saData } = await supabaseAdmin.from('cleaner_service_areas').select('*');
+    if (saData) rawServiceAreas = saData;
+
+    // 5. Construct enriched users list
+    const enrichedUsers = (profiles || []).map((p: any) => {
+      const authU = authMap.get(p.id);
+      const email = authU?.email || p.email || '';
+      const meta = authU?.user_metadata || {};
+      const appMeta = authU?.app_metadata || {};
+      const supervisorId = p.supervisor_id || meta.supervisor_id || appMeta.supervisor_id || null;
+      const rawRole = (p.role || meta.role || 'resident').toString().toLowerCase();
+      const role = rawRole === 'admin' ? 'administrator' : rawRole;
+      const status = p.account_status || meta.account_status || 'active';
+
+      return {
+        id: p.id,
+        email,
+        fullName: p.full_name || meta.full_name || 'User',
+        phoneNumber: p.phone || p.phone_number || meta.phone || meta.phone_number || '',
+        role,
+        accountStatus: status,
+        supervisorId,
+        supervisorName: null as string | null,
+        createdAt: p.created_at || authU?.created_at,
+        updatedAt: p.updated_at,
+      };
+    });
+
+    // Resolve supervisor names
+    enrichedUsers.forEach((u) => {
+      if (u.supervisorId) {
+        const sup = enrichedUsers.find((s) => s.id === u.supervisorId);
+        if (sup) u.supervisorName = sup.fullName;
+      }
+    });
+
+    // Build normalized cleaner applications
+    const normalizedApps = rawApps.map((a: any) => {
+      const cId = a.applicant_id || a.cleaner_id;
+      const cleanerUser = enrichedUsers.find((u) => u.id === cId);
+      const supId = a.assigned_supervisor_id || cleanerUser?.supervisorId || null;
+      const supUser = supId ? enrichedUsers.find((u) => u.id === supId) : null;
+
+      return {
+        id: a.id,
+        cleanerId: cId,
+        cleanerName: cleanerUser?.fullName || 'Cleaner Applicant',
+        cleanerEmail: cleanerUser?.email || '',
+        cleanerPhone: cleanerUser?.phoneNumber || '',
+        status: a.status || 'pending',
+        assignedSupervisorId: supId,
+        assignedSupervisorName: supUser?.fullName || null,
+        reviewerId: a.reviewed_by || a.reviewer_id || null,
+        reviewNotes: a.review_note || a.review_notes || null,
+        reviewedAt: a.reviewed_at,
+        createdAt: a.created_at,
+      };
+    });
+
+    // Build normalized service areas
+    const normalizedAreas = rawServiceAreas.map((sa: any) => ({
+      id: sa.id,
+      cleanerId: sa.cleaner_id,
+      localityId: sa.locality_id,
+      isApproved: sa.is_approved,
+      approvedBy: sa.approved_by,
+      approvedAt: sa.approved_at,
+    }));
+
+    return res.json({
+      success: true,
+      users: enrichedUsers,
+      cleanerApplications: normalizedApps,
+      serviceAreas: normalizedAreas,
+    });
+  } catch (err: any) {
+    return res.status(500).json({
+      success: false,
+      error: err.message || 'Error fetching user directory.',
     });
   }
 });

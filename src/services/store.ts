@@ -298,69 +298,98 @@ class PortalStore {
 
       // 3. If supervisor/admin, fetch profiles, service areas, and applications
       if (this.state.currentUser && isSupervisorOrAdmin(this.state.currentUser.role)) {
-        const { data: profs } = await supabase.from('profiles').select('*');
-        if (profs) {
-          const userList = profs.map((p: any) => ({
-            id: p.id,
-            email: p.email || '',
-            fullName: p.full_name,
-            phoneNumber: p.phone_number || p.phone || '',
-            role: p.role === 'admin' ? 'administrator' : p.role,
-            accountStatus: p.account_status,
-            supervisorId: p.supervisor_id || null,
-            supervisorName: null as string | null,
-            createdAt: p.created_at,
-            updatedAt: p.updated_at,
-          }));
-
-          // Resolve supervisor names
-          userList.forEach((u: any) => {
-            if (u.supervisorId) {
-              const sup = userList.find((s: any) => s.id === u.supervisorId);
-              if (sup) u.supervisorName = sup.fullName;
+        let directoryLoaded = false;
+        try {
+          const { data: sessionData } = await supabase.auth.getSession();
+          const token = sessionData?.session?.access_token;
+          if (token && isAdministrator(this.state.currentUser.role)) {
+            const dirRes = await fetch('/api/admin/users', {
+              headers: { Authorization: `Bearer ${token}` },
+            });
+            const dirData = await dirRes.json().catch(() => null);
+            if (dirRes.ok && dirData?.success) {
+              if (Array.isArray(dirData.users) && dirData.users.length > 0) {
+                this.state.users = dirData.users;
+              }
+              if (Array.isArray(dirData.cleanerApplications)) {
+                this.state.cleanerApplications = dirData.cleanerApplications;
+              }
+              if (Array.isArray(dirData.serviceAreas)) {
+                this.state.serviceAreas = dirData.serviceAreas;
+              }
+              directoryLoaded = true;
             }
-          });
-
-          this.state.users = userList;
+          }
+        } catch (err) {
+          console.warn('Admin directory fetch note:', err);
         }
 
-        const { data: saList } = await supabase
-          .from('cleaner_service_areas')
-          .select('*, locality:localities(name)');
-        if (saList) {
-          this.state.serviceAreas = saList.map((sa: any) => ({
-            id: sa.id,
-            cleanerId: sa.cleaner_id,
-            localityId: sa.locality_id,
-            localityName: sa.locality?.name || 'Locality',
-            isApproved: sa.is_approved,
-            approvedBy: sa.approved_by,
-            approvedAt: sa.approved_at,
-          }));
-        }
+        // Fallback to direct PostgREST queries if directory endpoint not loaded
+        if (!directoryLoaded) {
+          const { data: profs } = await supabase.from('profiles').select('*');
+          if (profs) {
+            const userList = profs.map((p: any) => ({
+              id: p.id,
+              email: p.email || '',
+              fullName: p.full_name,
+              phoneNumber: p.phone_number || p.phone || '',
+              role: p.role === 'admin' ? 'administrator' : p.role,
+              accountStatus: p.account_status,
+              supervisorId: p.supervisor_id || null,
+              supervisorName: null as string | null,
+              createdAt: p.created_at,
+              updatedAt: p.updated_at,
+            }));
 
-        const { data: apps } = await supabase.from('cleaner_applications').select('*');
-        if (apps) {
-          this.state.cleanerApplications = apps.map((a: any) => {
-            const cleanerProf = this.state.users.find((u) => u.id === a.cleaner_id);
-            const supProf = a.assigned_supervisor_id
-              ? this.state.users.find((u) => u.id === a.assigned_supervisor_id)
-              : null;
-            return {
-              id: a.id,
-              cleanerId: a.cleaner_id,
-              cleanerName: cleanerProf?.fullName || a.cleaner_name || 'Cleaner Applicant',
-              cleanerEmail: cleanerProf?.email || a.cleaner_email || '',
-              cleanerPhone: cleanerProf?.phoneNumber || '',
-              status: a.status,
-              assignedSupervisorId: a.assigned_supervisor_id || null,
-              assignedSupervisorName: supProf?.fullName || null,
-              reviewerId: a.reviewer_id,
-              reviewNotes: a.review_notes,
-              reviewedAt: a.reviewed_at,
-              createdAt: a.created_at,
-            };
-          });
+            // Resolve supervisor names
+            userList.forEach((u: any) => {
+              if (u.supervisorId) {
+                const sup = userList.find((s: any) => s.id === u.supervisorId);
+                if (sup) u.supervisorName = sup.fullName;
+              }
+            });
+
+            this.state.users = userList;
+          }
+
+          const { data: saList } = await supabase
+            .from('cleaner_service_areas')
+            .select('*, locality:localities(name)');
+          if (saList) {
+            this.state.serviceAreas = saList.map((sa: any) => ({
+              id: sa.id,
+              cleanerId: sa.cleaner_id,
+              localityId: sa.locality_id,
+              localityName: sa.locality?.name || 'Locality',
+              isApproved: sa.is_approved,
+              approvedBy: sa.approved_by,
+              approvedAt: sa.approved_at,
+            }));
+          }
+
+          const { data: apps } = await supabase.from('cleaner_applications').select('*');
+          if (apps) {
+            this.state.cleanerApplications = apps.map((a: any) => {
+              const cId = a.applicant_id || a.cleaner_id;
+              const cleanerProf = this.state.users.find((u) => u.id === cId);
+              const supId = a.assigned_supervisor_id || cleanerProf?.supervisorId || null;
+              const supProf = supId ? this.state.users.find((u) => u.id === supId) : null;
+              return {
+                id: a.id,
+                cleanerId: cId,
+                cleanerName: cleanerProf?.fullName || a.cleaner_name || 'Cleaner Applicant',
+                cleanerEmail: cleanerProf?.email || a.cleaner_email || '',
+                cleanerPhone: cleanerProf?.phoneNumber || '',
+                status: a.status,
+                assignedSupervisorId: supId,
+                assignedSupervisorName: supProf?.fullName || null,
+                reviewerId: a.reviewed_by || a.reviewer_id,
+                reviewNotes: a.review_note || a.review_notes,
+                reviewedAt: a.reviewed_at,
+                createdAt: a.created_at,
+              };
+            });
+          }
         }
       } else if (this.state.currentUser && this.state.currentUser.role === 'cleaner') {
         // Cleaner: fetch their own service areas and supervisor details
