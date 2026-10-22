@@ -1,0 +1,6 @@
+{
+  "name": "Waste Pickup Request Portal",
+  "description": "Secure municipal waste reporting, verification, cleaner dispatch, and photo audit system with 4 distinct roles.",
+  "requestFramePermissions": ["geolocation"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
