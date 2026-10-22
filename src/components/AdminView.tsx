@@ -78,14 +78,16 @@ export const AdminView: React.FC<AdminViewProps> = ({
     });
     setIsProvisioning(false);
 
-    if (res.success && res.user) {
+    if (res.success) {
+      const supervisorName = res.user?.fullName || supFullName;
+      const supervisorEmail = res.user?.email || supEmail;
       setProvisionMsg({
-        text: `Supervisor account for ${res.user.fullName} (${res.user.email}) successfully provisioned and activated.`,
+        text: `Supervisor account for ${supervisorName} (${supervisorEmail}) successfully provisioned and activated.`,
       });
       setSupFullName('');
       setSupEmail('');
       setSupPhone('');
-      setTimeout(() => setProvisionMsg(null), 6000);
+      setTimeout(() => setProvisionMsg(null), 8000);
     } else {
       setProvisionMsg({ text: res.error || 'Supervisor provisioning failed.', error: true });
     }

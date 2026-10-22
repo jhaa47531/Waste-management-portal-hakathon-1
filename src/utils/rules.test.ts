@@ -12,6 +12,7 @@ import {
   generateTrackingCode,
   validateCleanerAssignment,
   canTransitionStatus,
+  checkStorageUploadAuthorization,
 } from './rules.ts';
 
 test('validateGpsCoordinates rejects null, undefined, out of bounds, and zero island', () => {
@@ -195,4 +196,58 @@ test('canTransitionStatus strictly enforces state machine, role authorization, a
   });
   assert.equal(adminApprove.allowed, true);
 });
+
+test('checkStorageUploadAuthorization strictly validates uploader folder ownership against auth.uid', () => {
+  const residentUid = '11111111-2222-3333-4444-555555555555';
+  const attackerUid = '99999999-8888-7777-6666-555555555555';
+
+  // 1. Resident uploading to their own residents/{auth.uid}/* path
+  const validResidentUpload = checkStorageUploadAuthorization(
+    `residents/${residentUid}/c-100-initial.jpg`,
+    residentUid,
+    'resident'
+  );
+  assert.equal(validResidentUpload.allowed, true);
+
+  // 2. Attacker attempting to upload to another resident's folder
+  const crossResidentUpload = checkStorageUploadAuthorization(
+    `residents/${residentUid}/malicious-initial.jpg`,
+    attackerUid,
+    'resident'
+  );
+  assert.equal(crossResidentUpload.allowed, false);
+  assert.equal(crossResidentUpload.reason, 'Folder owner does not match authenticated user ID.');
+
+  // 3. Cleaner uploading to their own cleaners/{auth.uid}/* path
+  const validCleanerUpload = checkStorageUploadAuthorization(
+    `cleaners/${residentUid}/c-100-completion.jpg`,
+    residentUid,
+    'cleaner'
+  );
+  assert.equal(validCleanerUpload.allowed, true);
+
+  // 4. Resident attempting to upload to another user's cleaner folder
+  const crossCleanerUpload = checkStorageUploadAuthorization(
+    `cleaners/${residentUid}/fake-completion.jpg`,
+    attackerUid,
+    'resident'
+  );
+  assert.equal(crossCleanerUpload.allowed, false);
+
+  // 5. Supervisor or Administrator can upload to any path
+  const supervisorUpload = checkStorageUploadAuthorization(
+    `residents/${residentUid}/audit-proof.jpg`,
+    'sup-uuid',
+    'supervisor'
+  );
+  assert.equal(supervisorUpload.allowed, true);
+
+  const adminUpload = checkStorageUploadAuthorization(
+    `residents/${residentUid}/admin-audit.jpg`,
+    'admin-uuid',
+    'admin'
+  );
+  assert.equal(adminUpload.allowed, true);
+});
+
 

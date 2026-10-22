@@ -309,3 +309,37 @@ export function canTransitionStatus(
     reason: `Invalid state transition from '${currentStatus}' to '${targetStatus}' for role '${callerRole}'.`,
   };
 }
+
+/**
+ * Validates that an object storage path conforms to the storage RLS policy
+ * (matching the authenticated user's ID and preventing cross-user folder tampering).
+ */
+export function checkStorageUploadAuthorization(
+  storagePath: string,
+  authUid: string,
+  callerRole: UserRole | string
+): { allowed: boolean; reason?: string } {
+  if (isSupervisorOrAdmin(callerRole)) {
+    return { allowed: true };
+  }
+
+  const parts = storagePath.split('/');
+  if (parts.length < 2) {
+    return { allowed: false, reason: 'Invalid path format.' };
+  }
+
+  // Format 1: residents/{auth.uid}/* or cleaners/{auth.uid}/*
+  if (parts[0] === 'residents' || parts[0] === 'cleaners') {
+    if (parts[1] !== authUid) {
+      return { allowed: false, reason: 'Folder owner does not match authenticated user ID.' };
+    }
+    return { allowed: true };
+  }
+
+  // Format 2: {auth.uid}/*
+  if (parts[0] === authUid) {
+    return { allowed: true };
+  }
+
+  return { allowed: false, reason: 'Unauthorized folder path.' };
+}

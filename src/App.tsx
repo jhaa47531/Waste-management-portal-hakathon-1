@@ -5,7 +5,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { portalStore } from './services/store.ts';
-import { isSupabaseConfigured } from './services/supabase.ts';
+import { isSupabaseConfigured, getSupabaseConfigStatus } from './services/supabase.ts';
 import { Header } from './components/Header.tsx';
 import { ResidentView } from './components/ResidentView.tsx';
 import { SupervisorView } from './components/SupervisorView.tsx';
@@ -44,6 +44,7 @@ export default function App() {
 
   const { currentUser, complaints, localities, serviceAreas, cleanerApplications, users } =
     storeState;
+  const configStatus = getSupabaseConfigStatus();
   const isLive = isSupabaseConfigured();
 
   const handleOpenAuth = (role: UserRole = 'resident', mode: 'login' | 'register' = 'login') => {
@@ -69,7 +70,16 @@ export default function App() {
           <div className="max-w-7xl mx-auto flex items-center gap-2">
             <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
             <span>
-              <strong>Supabase Database Offline (Placeholder Credentials Detected):</strong> The application is currently running in local demonstration mode. Real PostgreSQL tables and storage require setting genuine <code className="font-mono font-semibold bg-amber-100 px-1 rounded">VITE_SUPABASE_URL</code> and <code className="font-mono font-semibold bg-amber-100 px-1 rounded">VITE_SUPABASE_ANON_KEY</code>.
+              <strong>
+                {configStatus.hasUrl || configStatus.hasKey
+                  ? 'Supabase Database Offline (Invalid or Placeholder Credentials Detected):'
+                  : 'Supabase Database Offline (Credentials Not Configured):'}
+              </strong>{' '}
+              {configStatus.errorMessage ? <span>{configStatus.errorMessage} </span> : null}
+              The application is running in local demonstration mode. Real PostgreSQL tables and storage require setting genuine{' '}
+              <code className="font-mono font-semibold bg-amber-100 px-1 rounded">VITE_SUPABASE_URL</code> and{' '}
+              <code className="font-mono font-semibold bg-amber-100 px-1 rounded">VITE_SUPABASE_ANON_KEY</code> in{' '}
+              <code className="font-mono font-semibold bg-amber-100 px-1 rounded">.env.local</code>.
             </span>
           </div>
         </div>

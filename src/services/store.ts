@@ -660,20 +660,34 @@ class PortalStore {
       trackingCode = generateTrackingCode();
     }
 
+    let authUserId = user.id;
+    if (this.isLive && supabase) {
+      try {
+        const { data: sessionData } = await supabase.auth.getSession();
+        if (sessionData?.session?.user?.id) {
+          authUserId = sessionData.session.user.id;
+        }
+      } catch {
+        // Fallback to user.id
+      }
+    }
+
     const complaintId = `c-${Date.now()}`;
     const timestamp = new Date().toISOString();
-    const ext = data.photoFile.name.split('.').pop() || 'jpg';
-    const storagePath = `residents/${user.id}/${complaintId}-initial.${ext}`;
+    const rawExt = data.photoFile.name.split('.').pop()?.toLowerCase() || 'jpg';
+    const ext = rawExt === 'jpeg' ? 'jpg' : rawExt;
+    const storagePath = `residents/${authUserId}/${complaintId}-initial.${ext}`;
 
     // Live Supabase Upload & Persistence
     if (this.isLive && supabase) {
       try {
-        // Upload photo to storage bucket 'waste-complaint-photos'
+        // 1. Upload photo to private storage bucket 'waste-complaint-photos'
+        let photoUploaded = false;
         if (data.photoFile.rawFile) {
           const { error: uploadError } = await supabase.storage
             .from(COMPLAINT_STORAGE_BUCKET)
             .upload(storagePath, data.photoFile.rawFile, {
-              contentType: data.photoFile.mimeType,
+              contentType: data.photoFile.mimeType || 'image/jpeg',
               upsert: false,
             });
 
@@ -683,14 +697,15 @@ class PortalStore {
               error: `Storage upload failed: ${uploadError.message}. Submission blocked to prevent corrupted records.`,
             };
           }
+          photoUploaded = true;
         }
 
-        // Insert complaint row into PostgreSQL table
+        // 2. Insert complaint row into PostgreSQL table
         const { data: insertedComplaint, error: dbError } = await supabase
           .from('complaints')
           .insert({
             tracking_code: trackingCode,
-            resident_id: user.id,
+            resident_id: authUserId,
             resident_name: data.fullName.trim(),
             resident_phone: data.phoneNumber.trim(),
             address: data.address.trim(),
@@ -706,18 +721,35 @@ class PortalStore {
           .single();
 
         if (dbError) {
+          // Rollback: delete uploaded photo object to prevent orphaned storage objects
+          if (photoUploaded) {
+            await supabase.storage.from(COMPLAINT_STORAGE_BUCKET).remove([storagePath]).catch(() => {});
+          }
           return { success: false, error: `Database insert failed: ${dbError.message}` };
         }
 
-        // Insert photo record in complaint_photos
-        await supabase.from('complaint_photos').insert({
+        // 3. Insert photo record in complaint_photos
+        const { error: photoDbError } = await supabase.from('complaint_photos').insert({
           complaint_id: insertedComplaint.id,
-          uploader_id: user.id,
+          uploader_id: authUserId,
           photo_type: 'resident_initial',
           storage_path: storagePath,
           mime_type: data.photoFile.mimeType,
           file_size_bytes: data.photoFile.sizeBytes,
         });
+
+        if (photoDbError) {
+          // Rollback: remove complaint row and uploaded storage object
+          try {
+            await supabase.from('complaints').delete().eq('id', insertedComplaint.id);
+          } catch {
+            // Ignore rollback failure
+          }
+          if (photoUploaded) {
+            await supabase.storage.from(COMPLAINT_STORAGE_BUCKET).remove([storagePath]).catch(() => {});
+          }
+          return { success: false, error: `Photo audit record failed: ${photoDbError.message}` };
+        }
 
         await this.loadSupabaseData();
         const saved = this.state.complaints.find((c) => c.trackingCode === trackingCode);
@@ -1165,17 +1197,31 @@ class PortalStore {
     });
     if (!check.allowed) return { success: false, error: check.reason };
 
+    let authUserId = user.id;
+    if (this.isLive && supabase) {
+      try {
+        const { data: sessionData } = await supabase.auth.getSession();
+        if (sessionData?.session?.user?.id) {
+          authUserId = sessionData.session.user.id;
+        }
+      } catch {
+        // Fallback to user.id
+      }
+    }
+
     const timestamp = new Date().toISOString();
-    const ext = photoFile.name.split('.').pop() || 'jpg';
-    const storagePath = `cleaners/${user.id}/${complaintId}-completion.${ext}`;
+    const rawExt = photoFile.name.split('.').pop()?.toLowerCase() || 'jpg';
+    const ext = rawExt === 'jpeg' ? 'jpg' : rawExt;
+    const storagePath = `cleaners/${authUserId}/${complaintId}-completion.${ext}`;
 
     if (this.isLive && supabase) {
       try {
+        let photoUploaded = false;
         if (photoFile.rawFile) {
           const { error: uploadError } = await supabase.storage
             .from(COMPLAINT_STORAGE_BUCKET)
             .upload(storagePath, photoFile.rawFile, {
-              contentType: photoFile.mimeType,
+              contentType: photoFile.mimeType || 'image/jpeg',
               upsert: true,
             });
 
@@ -1185,6 +1231,7 @@ class PortalStore {
               error: `Storage upload failed: ${uploadError.message}. Photo must be saved to submit completion.`,
             };
           }
+          photoUploaded = true;
         }
 
         const { error: rpcError } = await supabase.rpc('submit_cleaner_completion', {
@@ -1195,7 +1242,12 @@ class PortalStore {
           p_notes: notes || null,
         });
 
-        if (rpcError) return { success: false, error: rpcError.message };
+        if (rpcError) {
+          if (photoUploaded) {
+            await supabase.storage.from(COMPLAINT_STORAGE_BUCKET).remove([storagePath]).catch(() => {});
+          }
+          return { success: false, error: rpcError.message };
+        }
         await this.loadSupabaseData();
         return { success: true };
       } catch (err: any) {
@@ -1299,10 +1351,64 @@ class PortalStore {
 
     if (this.isLive && supabase) {
       try {
-        // Look up profile by email or user
-        const { data: targetProfile, error: pError } = await supabase
+        const { data: sessionData } = await supabase.auth.getSession();
+        const token = sessionData?.session?.access_token;
+
+        let endpointError: string | null = null;
+
+        // 1. Attempt secure server-side endpoint if authenticated
+        if (token) {
+          try {
+            const apiRes = await fetch('/api/admin/provision-supervisor', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                Authorization: `Bearer ${token}`,
+              },
+              body: JSON.stringify({
+                email: cleanEmail,
+                fullName: cleanName,
+                phoneNumber: cleanPhone,
+              }),
+            });
+
+            const apiData = await apiRes.json().catch(() => null);
+            if (apiRes.ok && apiData?.success) {
+              await this.loadSupabaseData();
+              return { success: true, user: apiData.user };
+            } else if (apiData?.error && apiRes.status !== 404 && apiRes.status !== 501) {
+              endpointError = apiData.error;
+            }
+          } catch {
+            // Server endpoint unavailable or network error, proceed to fallback
+          }
+
+          // 2. Attempt Supabase Edge Function
+          try {
+            const { data: edgeData, error: edgeError } = await supabase.functions.invoke(
+              'provision-supervisor',
+              {
+                body: {
+                  email: cleanEmail,
+                  fullName: cleanName,
+                  phoneNumber: cleanPhone,
+                },
+              }
+            );
+
+            if (!edgeError && edgeData?.success) {
+              await this.loadSupabaseData();
+              return { success: true, user: edgeData.user };
+            }
+          } catch {
+            // Edge Function unavailable
+          }
+        }
+
+        // 3. Fallback: Check if user profile already exists in public.profiles (e.g., registered as resident or invited in Auth tab)
+        const { data: targetProfile } = await supabase
           .from('profiles')
-          .select('id')
+          .select('id, full_name, phone_number, email')
           .eq('email', cleanEmail)
           .maybeSingle();
 
@@ -1312,11 +1418,25 @@ class PortalStore {
           });
           if (rpcError) return { success: false, error: rpcError.message };
           await this.loadSupabaseData();
-          return { success: true };
+          return {
+            success: true,
+            user: {
+              id: targetProfile.id,
+              email: cleanEmail,
+              fullName: cleanName || targetProfile.full_name,
+              phoneNumber: cleanPhone || targetProfile.phone_number,
+              role: 'supervisor',
+              accountStatus: 'active',
+              createdAt: new Date().toISOString(),
+              updatedAt: new Date().toISOString(),
+            },
+          };
         } else {
           return {
             success: false,
-            error: `User ${cleanEmail} has not yet registered in Supabase Auth. Ask them to register first, or create their user in the Supabase Dashboard Auth tab, then promote them to supervisor.`,
+            error:
+              endpointError ||
+              `User ${cleanEmail} has not yet registered in Supabase Auth. Programmatic Auth user creation requires SUPABASE_SERVICE_ROLE_KEY configured in AI Studio Secrets (or deploying the provision-supervisor Edge Function). Alternatively, invite ${cleanEmail} via the Supabase Dashboard Auth tab, then click Provision Supervisor here.`,
           };
         }
       } catch (err: any) {
