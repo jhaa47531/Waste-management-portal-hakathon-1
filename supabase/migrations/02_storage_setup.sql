@@ -55,6 +55,11 @@ WITH CHECK (
             AND split_part(name, '/', 2) = auth.uid()::text
             AND split_part(name, '/', 3) != ''
         )
+        -- Scoped folder format: {auth.uid()}/* or {auth.uid()}/residents/*
+        OR (
+            split_part(name, '/', 1) = auth.uid()::text
+            AND split_part(name, '/', 2) != ''
+        )
         -- Staff oversight: supervisors and administrators
         OR public.current_user_role() IN ('supervisor', 'admin')
     )
@@ -73,6 +78,10 @@ USING (
             split_part(name, '/', 1) IN ('residents', 'cleaners')
             AND split_part(name, '/', 2) = auth.uid()::text
         )
+        OR (
+            split_part(name, '/', 1) = auth.uid()::text
+        )
+        OR owner = auth.uid()
         OR public.current_user_role() IN ('supervisor', 'admin')
     )
 )
@@ -82,6 +91,10 @@ WITH CHECK (
             split_part(name, '/', 1) IN ('residents', 'cleaners')
             AND split_part(name, '/', 2) = auth.uid()::text
         )
+        OR (
+            split_part(name, '/', 1) = auth.uid()::text
+        )
+        OR owner = auth.uid()
         OR public.current_user_role() IN ('supervisor', 'admin')
     )
 );
@@ -100,6 +113,9 @@ USING (
         OR (
             split_part(name, '/', 1) IN ('residents', 'cleaners')
             AND split_part(name, '/', 2) = auth.uid()::text
+        )
+        OR (
+            split_part(name, '/', 1) = auth.uid()::text
         )
         OR owner = auth.uid()
         -- Resident viewing photos linked to their complaints
@@ -132,6 +148,9 @@ USING (
         OR (
             split_part(name, '/', 1) IN ('residents', 'cleaners')
             AND split_part(name, '/', 2) = auth.uid()::text
+        )
+        OR (
+            split_part(name, '/', 1) = auth.uid()::text
         )
         OR owner = auth.uid()
     )

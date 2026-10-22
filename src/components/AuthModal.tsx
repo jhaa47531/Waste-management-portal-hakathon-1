@@ -47,6 +47,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   const [selectedLocalityIds, setSelectedLocalityIds] = useState<string[]>([]);
 
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
@@ -59,6 +60,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
         setMode(initialMode);
       }
       setError(null);
+      setNotice(null);
       setEmail('');
       setPassword('');
       setFullName('');
@@ -71,6 +73,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   const handleRoleChange = (newRole: UserRole) => {
     setActiveRole(newRole);
     setError(null);
+    setNotice(null);
     if (newRole === 'supervisor' || newRole === 'admin' || newRole === 'administrator') {
       setMode('login');
     }
@@ -94,6 +97,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
+    setNotice(null);
     setLoading(true);
 
     const res = await portalStore.loginWithEmail(email, password);
@@ -109,6 +113,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   const handleResidentRegister = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
+    setNotice(null);
 
     if (fullName.trim().length < 2) {
       setError('Full name must be at least 2 characters.');
@@ -129,7 +134,15 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     setLoading(false);
 
     if (res.success) {
-      onClose();
+      if (res.pendingConfirmation) {
+        setNotice(
+          res.message ||
+            'Registration successful! Please check your email inbox to verify your account before logging in.'
+        );
+        setMode('login');
+      } else {
+        onClose();
+      }
     } else {
       setError(res.error || 'Registration failed.');
     }
@@ -282,6 +295,14 @@ export const AuthModal: React.FC<AuthModalProps> = ({
             </button>
           </div>
         </div>
+
+        {/* Success Notice Feedback */}
+        {notice && (
+          <div className="p-3 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs flex items-start gap-2">
+            <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
+            <span>{notice}</span>
+          </div>
+        )}
 
         {/* Error Feedback */}
         {error && (

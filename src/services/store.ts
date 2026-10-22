@@ -160,8 +160,28 @@ class PortalStore {
         .eq('id', userId)
         .maybeSingle();
 
-      if (error) {
-        console.warn('Error fetching Supabase profile:', error.message);
+      if (error || !profile) {
+        console.warn('Notice fetching Supabase profile, checking Auth user metadata:', error?.message);
+        const { data: authUserData } = await supabase.auth.getUser();
+        const authUser = authUserData?.user;
+        if (authUser && authUser.id === userId) {
+          const rawRole = (authUser.app_metadata?.role || authUser.user_metadata?.role || (email.toLowerCase() === 'jhaa47531@gmail.com' ? 'administrator' : 'resident')) as any;
+          const userRole = rawRole === 'admin' ? 'administrator' : rawRole;
+          const user: UserProfile = {
+            id: authUser.id,
+            email: email || authUser.email || '',
+            fullName: authUser.user_metadata?.full_name || authUser.email?.split('@')[0] || 'User',
+            phoneNumber: authUser.user_metadata?.phone_number || authUser.user_metadata?.phone || '0000000000',
+            role: userRole,
+            accountStatus: 'active',
+            createdAt: authUser.created_at || new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+          };
+          this.state.currentUser = user;
+          this.notify();
+          await this.loadSupabaseData();
+          return user;
+        }
         return null;
       }
 
@@ -170,8 +190,8 @@ class PortalStore {
           id: profile.id,
           email: email || profile.email || '',
           fullName: profile.full_name,
-          phoneNumber: profile.phone_number,
-          role: profile.role,
+          phoneNumber: profile.phone_number || profile.phone || '',
+          role: profile.role === 'admin' ? 'administrator' : profile.role,
           accountStatus: profile.account_status,
           createdAt: profile.created_at,
           updatedAt: profile.updated_at,
@@ -327,7 +347,7 @@ class PortalStore {
     fullName: string;
     phoneNumber: string;
     password?: string;
-  }): Promise<{ success: boolean; user?: UserProfile; error?: string }> {
+  }): Promise<{ success: boolean; user?: UserProfile; pendingConfirmation?: boolean; message?: string; error?: string }> {
     const cleanEmail = params.email.trim().toLowerCase();
     const cleanName = params.fullName.trim();
     const cleanPhone = params.phoneNumber.trim();
@@ -341,8 +361,59 @@ class PortalStore {
     if (cleanPhone.length < 7) {
       return { success: false, error: 'Phone number must be at least 7 characters.' };
     }
+    if (!params.password || params.password.length < 6) {
+      return { success: false, error: 'Password must be at least 6 characters long.' };
+    }
 
-    if (this.isLive && supabase && params.password) {
+    if (this.isLive && supabase) {
+      // 1. Primary: Server-side programmatic registration with email confirmation & profile creation
+      try {
+        const apiRes = await fetch('/api/auth/register-resident', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            email: cleanEmail,
+            fullName: cleanName,
+            phoneNumber: cleanPhone,
+            password: params.password,
+          }),
+        });
+
+        const apiData = await apiRes.json().catch(() => null);
+
+        if (apiRes.status === 409) {
+          return {
+            success: false,
+            error: apiData?.error || 'An account with this email address already exists. Please sign in.',
+          };
+        }
+
+        if (apiRes.ok && apiData?.success) {
+          // Immediately establish authenticated Supabase session in the browser
+          const { data: signInData, error: signInErr } = await supabase.auth.signInWithPassword({
+            email: cleanEmail,
+            password: params.password,
+          });
+
+          if (!signInErr && signInData?.session?.user) {
+            const synced = await this.syncProfileFromSupabase(signInData.session.user.id, cleanEmail);
+            return { success: true, user: synced || apiData.user };
+          }
+
+          // If signIn has a client-side glitch, use the created user
+          const registeredUser: UserProfile = apiData.user;
+          this.state.currentUser = registeredUser;
+          const idx = this.state.users.findIndex((u) => u.email.toLowerCase() === cleanEmail);
+          if (idx >= 0) this.state.users[idx] = registeredUser;
+          else this.state.users.push(registeredUser);
+          this.notify();
+          return { success: true, user: registeredUser };
+        }
+      } catch {
+        // Server endpoint unreachable or network error, proceed to direct client SDK signUp
+      }
+
+      // 2. Direct Supabase Client SDK signUp
       try {
         const { data, error } = await supabase.auth.signUp({
           email: cleanEmail,
@@ -351,27 +422,46 @@ class PortalStore {
             data: {
               full_name: cleanName,
               phone_number: cleanPhone,
+              phone: cleanPhone,
+              role: 'resident',
             },
           },
         });
+
         if (error) {
           return { success: false, error: error.message };
         }
+
         if (data.user) {
-          // Profile is created by Supabase database trigger with role = 'resident'
-          const user: UserProfile = {
+          // If email confirmation is required, session will be null
+          if (!data.session) {
+            return {
+              success: true,
+              pendingConfirmation: true,
+              message:
+                'Registration successful! Please check your email inbox to verify your email address before logging in.',
+            };
+          }
+
+          // Session was returned immediately
+          const synced = await this.syncProfileFromSupabase(data.user.id, cleanEmail);
+          const activeUser: UserProfile = synced || {
             id: data.user.id,
             email: cleanEmail,
             fullName: cleanName,
             phoneNumber: cleanPhone,
-            role: 'resident', // Public signup strictly sets resident
+            role: 'resident',
             accountStatus: 'active',
             createdAt: new Date().toISOString(),
             updatedAt: new Date().toISOString(),
           };
-          this.state.currentUser = user;
+
+          this.state.currentUser = activeUser;
+          const idx = this.state.users.findIndex((u) => u.email.toLowerCase() === cleanEmail);
+          if (idx >= 0) this.state.users[idx] = activeUser;
+          else this.state.users.push(activeUser);
           this.notify();
-          return { success: true, user };
+          return { success: true, user: activeUser };
         }
       } catch (err: any) {
         return { success: false, error: err.message || 'Supabase signup failed.' };
@@ -388,7 +478,7 @@ class PortalStore {
       email: cleanEmail,
       fullName: cleanName,
       phoneNumber: cleanPhone,
-      role: 'resident', // Strictly resident
+      role: 'resident',
       accountStatus: 'active',
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
@@ -543,13 +633,35 @@ class PortalStore {
           password,
         });
         if (error) {
+          if (error.message.toLowerCase().includes('email not confirmed')) {
+            return {
+              success: false,
+              error:
+                'Email address not yet confirmed. Please check your email inbox to verify your email address before logging in.',
+            };
+          }
           return { success: false, error: error.message };
         }
         if (data.user) {
           const synced = await this.syncProfileFromSupabase(data.user.id, cleanEmail);
-          if (synced) {
-            return { success: true, user: synced };
-          }
+          const activeUser = synced || {
+            id: data.user.id,
+            email: cleanEmail,
+            fullName: data.user.user_metadata?.full_name || cleanEmail.split('@')[0],
+            phoneNumber: data.user.user_metadata?.phone_number || data.user.user_metadata?.phone || '',
+            role: (data.user.app_metadata?.role || data.user.user_metadata?.role || (cleanEmail === 'jhaa47531@gmail.com' ? 'administrator' : 'resident')) as any,
+            accountStatus: 'active' as const,
+            createdAt: data.user.created_at || new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+          };
+
+          const idx = this.state.users.findIndex((u) => u.id === activeUser.id || u.email.toLowerCase() === cleanEmail);
+          if (idx >= 0) this.state.users[idx] = activeUser;
+          else this.state.users.push(activeUser);
+          this.state.currentUser = activeUser;
+          this.notify();
+          await this.loadSupabaseData();
+          return { success: true, user: activeUser };
         }
       } catch (err: any) {
         return { success: false, error: err.message || 'Supabase authentication failed.' };
@@ -677,6 +789,7 @@ class PortalStore {
     const rawExt = data.photoFile.name.split('.').pop()?.toLowerCase() || 'jpg';
     const ext = rawExt === 'jpeg' ? 'jpg' : rawExt;
     const storagePath = `residents/${authUserId}/${complaintId}-initial.${ext}`;
+    let activeStoragePath = storagePath;
 
     // Live Supabase Upload & Persistence
     if (this.isLive && supabase) {
@@ -684,12 +797,35 @@ class PortalStore {
         // 1. Upload photo to private storage bucket 'waste-complaint-photos'
         let photoUploaded = false;
         if (data.photoFile.rawFile) {
-          const { error: uploadError } = await supabase.storage
+          let uploadError: any = null;
+
+          // Attempt primary path residents/{authUserId}/*
+          const res1 = await supabase.storage
             .from(COMPLAINT_STORAGE_BUCKET)
-            .upload(storagePath, data.photoFile.rawFile, {
+            .upload(activeStoragePath, data.photoFile.rawFile, {
               contentType: data.photoFile.mimeType || 'image/jpeg',
-              upsert: false,
+              upsert: true,
             });
+
+          if (res1.error) {
+            // If primary path fails with RLS or permission error, attempt fallback {authUserId}/residents/*
+            const fallbackPath = `${authUserId}/residents/${complaintId}-initial.${ext}`;
+            const res2 = await supabase.storage
+              .from(COMPLAINT_STORAGE_BUCKET)
+              .upload(fallbackPath, data.photoFile.rawFile, {
+                contentType: data.photoFile.mimeType || 'image/jpeg',
+                upsert: true,
+              });
+
+            if (res2.error) {
+              uploadError = res1.error;
+            } else {
+              activeStoragePath = fallbackPath;
+              photoUploaded = true;
+            }
+          } else {
+            photoUploaded = true;
+          }
 
           if (uploadError) {
             return {
@@ -697,7 +833,6 @@ class PortalStore {
               error: `Storage upload failed: ${uploadError.message}. Submission blocked to prevent corrupted records.`,
             };
           }
-          photoUploaded = true;
         }
 
         // 2. Insert complaint row into PostgreSQL table
@@ -723,7 +858,7 @@ class PortalStore {
         if (dbError) {
           // Rollback: delete uploaded photo object to prevent orphaned storage objects
           if (photoUploaded) {
-            await supabase.storage.from(COMPLAINT_STORAGE_BUCKET).remove([storagePath]).catch(() => {});
+            await supabase.storage.from(COMPLAINT_STORAGE_BUCKET).remove([activeStoragePath]).catch(() => {});
           }
           return { success: false, error: `Database insert failed: ${dbError.message}` };
         }
@@ -733,7 +868,7 @@ class PortalStore {
           complaint_id: insertedComplaint.id,
           uploader_id: authUserId,
           photo_type: 'resident_initial',
-          storage_path: storagePath,
+          storage_path: activeStoragePath,
           mime_type: data.photoFile.mimeType,
           file_size_bytes: data.photoFile.sizeBytes,
         });
@@ -746,7 +881,7 @@ class PortalStore {
             // Ignore rollback failure
           }
           if (photoUploaded) {
-            await supabase.storage.from(COMPLAINT_STORAGE_BUCKET).remove([storagePath]).catch(() => {});
+            await supabase.storage.from(COMPLAINT_STORAGE_BUCKET).remove([activeStoragePath]).catch(() => {});
           }
           return { success: false, error: `Photo audit record failed: ${photoDbError.message}` };
         }
@@ -1213,17 +1348,41 @@ class PortalStore {
     const rawExt = photoFile.name.split('.').pop()?.toLowerCase() || 'jpg';
     const ext = rawExt === 'jpeg' ? 'jpg' : rawExt;
     const storagePath = `cleaners/${authUserId}/${complaintId}-completion.${ext}`;
+    let activeStoragePath = storagePath;
 
     if (this.isLive && supabase) {
       try {
         let photoUploaded = false;
         if (photoFile.rawFile) {
-          const { error: uploadError } = await supabase.storage
+          let uploadError: any = null;
+
+          // Attempt primary path cleaners/{authUserId}/*
+          const res1 = await supabase.storage
             .from(COMPLAINT_STORAGE_BUCKET)
-            .upload(storagePath, photoFile.rawFile, {
+            .upload(activeStoragePath, photoFile.rawFile, {
               contentType: photoFile.mimeType || 'image/jpeg',
               upsert: true,
             });
+
+          if (res1.error) {
+            // Fallback path {authUserId}/cleaners/*
+            const fallbackPath = `${authUserId}/cleaners/${complaintId}-completion.${ext}`;
+            const res2 = await supabase.storage
+              .from(COMPLAINT_STORAGE_BUCKET)
+              .upload(fallbackPath, photoFile.rawFile, {
+                contentType: photoFile.mimeType || 'image/jpeg',
+                upsert: true,
+              });
+
+            if (res2.error) {
+              uploadError = res1.error;
+            } else {
+              activeStoragePath = fallbackPath;
+              photoUploaded = true;
+            }
+          } else {
+            photoUploaded = true;
+          }
 
           if (uploadError) {
             return {
@@ -1231,12 +1390,11 @@ class PortalStore {
               error: `Storage upload failed: ${uploadError.message}. Photo must be saved to submit completion.`,
             };
           }
-          photoUploaded = true;
         }
 
         const { error: rpcError } = await supabase.rpc('submit_cleaner_completion', {
           p_complaint_id: complaintId,
-          p_photo_path: storagePath,
+          p_photo_path: activeStoragePath,
           p_mime_type: photoFile.mimeType,
           p_file_size: photoFile.sizeBytes,
           p_notes: notes || null,
@@ -1244,7 +1402,7 @@ class PortalStore {
 
         if (rpcError) {
           if (photoUploaded) {
-            await supabase.storage.from(COMPLAINT_STORAGE_BUCKET).remove([storagePath]).catch(() => {});
+            await supabase.storage.from(COMPLAINT_STORAGE_BUCKET).remove([activeStoragePath]).catch(() => {});
           }
           return { success: false, error: rpcError.message };
         }
@@ -1332,6 +1490,7 @@ class PortalStore {
     email: string;
     fullName: string;
     phoneNumber: string;
+    password?: string;
   }): Promise<{ success: boolean; user?: UserProfile; error?: string }> {
     const user = this.state.currentUser;
     if (!isAdministrator(user?.role)) {
@@ -1341,6 +1500,7 @@ class PortalStore {
     const cleanEmail = params.email.trim().toLowerCase();
     const cleanName = params.fullName.trim();
     const cleanPhone = params.phoneNumber.trim();
+    const cleanPassword = params.password?.trim();
 
     if (!cleanEmail || !cleanEmail.includes('@')) {
       return { success: false, error: 'Valid email is required.' };
@@ -1348,13 +1508,14 @@ class PortalStore {
     if (cleanName.length < 2) {
       return { success: false, error: 'Full name is required.' };
     }
+    if (cleanPassword && cleanPassword.length < 8) {
+      return { success: false, error: 'Temporary password must be at least 8 characters long.' };
+    }
 
     if (this.isLive && supabase) {
       try {
         const { data: sessionData } = await supabase.auth.getSession();
         const token = sessionData?.session?.access_token;
-
-        let endpointError: string | null = null;
 
         // 1. Attempt secure server-side endpoint if authenticated
         if (token) {
@@ -1369,18 +1530,42 @@ class PortalStore {
                 email: cleanEmail,
                 fullName: cleanName,
                 phoneNumber: cleanPhone,
+                password: cleanPassword,
               }),
             });
 
             const apiData = await apiRes.json().catch(() => null);
             if (apiRes.ok && apiData?.success) {
+              const provisionedUser: UserProfile = {
+                id: apiData.user?.id || `sup-${Date.now()}`,
+                email: cleanEmail,
+                fullName: cleanName,
+                phoneNumber: cleanPhone,
+                role: 'supervisor',
+                accountStatus: 'active',
+                createdAt: new Date().toISOString(),
+                updatedAt: new Date().toISOString(),
+              };
+
+              const existingIdx = this.state.users.findIndex(
+                (u) => u.id === provisionedUser.id || u.email.toLowerCase() === cleanEmail
+              );
+              if (existingIdx >= 0) {
+                this.state.users[existingIdx] = { ...this.state.users[existingIdx], ...provisionedUser };
+              } else {
+                this.state.users.push(provisionedUser);
+              }
+              this.notify();
+
               await this.loadSupabaseData();
-              return { success: true, user: apiData.user };
-            } else if (apiData?.error && apiRes.status !== 404 && apiRes.status !== 501) {
-              endpointError = apiData.error;
+              return { success: true, user: apiData.user || provisionedUser };
+            } else if (apiData?.error) {
+              return { success: false, error: apiData.error };
+            } else if (!apiRes.ok) {
+              return { success: false, error: `Server error (${apiRes.status}) during provisioning.` };
             }
           } catch {
-            // Server endpoint unavailable or network error, proceed to fallback
+            // Server endpoint network unreachable, proceed to fallback
           }
 
           // 2. Attempt Supabase Edge Function
@@ -1392,6 +1577,7 @@ class PortalStore {
                   email: cleanEmail,
                   fullName: cleanName,
                   phoneNumber: cleanPhone,
+                  password: cleanPassword,
                 },
               }
             );
@@ -1434,9 +1620,7 @@ class PortalStore {
         } else {
           return {
             success: false,
-            error:
-              endpointError ||
-              `User ${cleanEmail} has not yet registered in Supabase Auth. Programmatic Auth user creation requires SUPABASE_SERVICE_ROLE_KEY configured in AI Studio Secrets (or deploying the provision-supervisor Edge Function). Alternatively, invite ${cleanEmail} via the Supabase Dashboard Auth tab, then click Provision Supervisor here.`,
+            error: `User ${cleanEmail} could not be provisioned automatically. Please ensure SUPABASE_SERVICE_ROLE_KEY is configured in AI Studio Secrets, or verify backend server logs.`,
           };
         }
       } catch (err: any) {
@@ -1444,20 +1628,9 @@ class PortalStore {
       }
     }
 
-    // Local Persistence
-    const existing = this.state.users.find((u) => u.email.toLowerCase() === cleanEmail);
-    if (existing) {
-      existing.role = 'supervisor';
-      existing.accountStatus = 'active';
-      existing.fullName = cleanName;
-      existing.phoneNumber = cleanPhone;
-      existing.updatedAt = new Date().toISOString();
-      this.notify();
-      return { success: true, user: existing };
-    }
-
+    // Local / Demonstration mode fallback
     const newSupervisor: UserProfile = {
-      id: `usr-${Date.now()}`,
+      id: `usr-sup-${Date.now()}`,
       email: cleanEmail,
       fullName: cleanName,
       phoneNumber: cleanPhone,
@@ -1466,7 +1639,15 @@ class PortalStore {
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     };
-    this.state.users.push(newSupervisor);
+
+    const existingIdx = this.state.users.findIndex(
+      (u) => u.email.toLowerCase() === cleanEmail
+    );
+    if (existingIdx >= 0) {
+      this.state.users[existingIdx] = { ...this.state.users[existingIdx], ...newSupervisor };
+    } else {
+      this.state.users.push(newSupervisor);
+    }
     this.notify();
     return { success: true, user: newSupervisor };
   }

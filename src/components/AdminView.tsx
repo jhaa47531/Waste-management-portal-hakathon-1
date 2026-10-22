@@ -19,6 +19,9 @@ import {
   Users,
   HardHat,
   Shield,
+  Eye,
+  EyeOff,
+  Lock,
 } from 'lucide-react';
 
 interface AdminViewProps {
@@ -40,6 +43,8 @@ export const AdminView: React.FC<AdminViewProps> = ({
   const [supFullName, setSupFullName] = useState('');
   const [supEmail, setSupEmail] = useState('');
   const [supPhone, setSupPhone] = useState('');
+  const [supPassword, setSupPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [provisionMsg, setProvisionMsg] = useState<{ text: string; error?: boolean } | null>(null);
   const [isProvisioning, setIsProvisioning] = useState(false);
 
@@ -69,12 +74,17 @@ export const AdminView: React.FC<AdminViewProps> = ({
       setProvisionMsg({ text: 'Phone number must be at least 7 characters.', error: true });
       return;
     }
+    if (!supPassword || supPassword.length < 8) {
+      setProvisionMsg({ text: 'Temporary password must be at least 8 characters long.', error: true });
+      return;
+    }
 
     setIsProvisioning(true);
     const res = await portalStore.provisionSupervisor({
       email: supEmail,
       fullName: supFullName,
       phoneNumber: supPhone,
+      password: supPassword,
     });
     setIsProvisioning(false);
 
@@ -87,6 +97,8 @@ export const AdminView: React.FC<AdminViewProps> = ({
       setSupFullName('');
       setSupEmail('');
       setSupPhone('');
+      setSupPassword('');
+      setShowPassword(false);
       setTimeout(() => setProvisionMsg(null), 8000);
     } else {
       setProvisionMsg({ text: res.error || 'Supervisor provisioning failed.', error: true });
@@ -249,6 +261,38 @@ export const AdminView: React.FC<AdminViewProps> = ({
                   placeholder="+1-555-0199"
                   className="w-full px-3 py-2 rounded-xl border border-slate-300 bg-white text-slate-900 focus:ring-2 focus:ring-purple-500"
                 />
+              </div>
+
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="block font-bold text-slate-700">
+                    Temporary Initial Password *
+                  </label>
+                  <span className="text-[10px] text-slate-400">Min 8 chars</span>
+                </div>
+                <div className="relative">
+                  <input
+                    type={showPassword ? 'text' : 'password'}
+                    required
+                    minLength={8}
+                    value={supPassword}
+                    onChange={(e) => setSupPassword(e.target.value)}
+                    placeholder="Enter secure initial password"
+                    className="w-full px-3 py-2 pr-10 rounded-xl border border-slate-300 bg-white text-slate-900 focus:ring-2 focus:ring-purple-500 font-mono text-xs"
+                    autoComplete="new-password"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 cursor-pointer p-0.5"
+                    aria-label={showPassword ? 'Hide password' : 'Show password'}
+                  >
+                    {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
+                <p className="text-[10px] text-slate-500 mt-1">
+                  Used by the supervisor to log in. Sent securely to the server; never logged or exposed.
+                </p>
               </div>
 
               <div className="p-2.5 rounded-xl bg-purple-50 border border-purple-200 text-purple-900 text-[11px] leading-relaxed">
