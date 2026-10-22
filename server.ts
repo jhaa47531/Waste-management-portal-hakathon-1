@@ -410,6 +410,646 @@ app.post('/api/auth/register-resident', async (req: Request, res: Response) => {
   }
 });
 
+/**
+ * Reusable helper: Validate that the caller is an active Administrator
+ */
+async function verifyAdminCaller(
+  authHeader?: string
+): Promise<{ ok: boolean; status: number; error?: string; callerId?: string }> {
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    return {
+      ok: false,
+      status: 401,
+      error: 'Unauthorized: Missing or invalid Authorization Bearer token.',
+    };
+  }
+
+  const token = authHeader.replace('Bearer ', '').trim();
+  if (!supabaseAdmin) {
+    return {
+      ok: false,
+      status: 503,
+      error: 'Backend error: SUPABASE_SERVICE_ROLE_KEY is not configured on the server.',
+    };
+  }
+
+  try {
+    const { data: userData, error: userError } = await supabaseAdmin.auth.getUser(token);
+    if (userError || !userData?.user) {
+      return {
+        ok: false,
+        status: 401,
+        error: `Authentication failed: ${userError?.message || 'Invalid session'}`,
+      };
+    }
+
+    const callerId = userData.user.id;
+    const { data: callerProfile } = await supabaseAdmin
+      .from('profiles')
+      .select('role, account_status')
+      .eq('id', callerId)
+      .maybeSingle();
+
+    const callerRole = (
+      callerProfile?.role ||
+      userData.user.app_metadata?.role ||
+      userData.user.user_metadata?.role ||
+      ''
+    ).toString().toLowerCase();
+
+    const callerStatus = (
+      callerProfile?.account_status ||
+      'active'
+    ).toString().toLowerCase();
+
+    if (callerStatus !== 'active' || (callerRole !== 'administrator' && callerRole !== 'admin')) {
+      return {
+        ok: false,
+        status: 403,
+        error: 'Forbidden: Only active administrators can perform this operation.',
+      };
+    }
+
+    return { ok: true, status: 200, callerId };
+  } catch (err: any) {
+    return { ok: false, status: 500, error: err.message || 'Error verifying caller authorization.' };
+  }
+}
+
+/**
+ * PATH A: Cleaner Self-Registration Endpoint
+ * Allows a cleaner candidate to submit their registration and preferred service localities.
+ * Automatically confirms Auth email server-side to avoid SMTP delivery failures.
+ * Sets role to 'cleaner' and account_status to 'pending' for administrator review.
+ */
+app.post('/api/cleaner/apply', async (req: Request, res: Response) => {
+  const { email, fullName, phoneNumber, password, preferredLocalityIds } = req.body || {};
+
+  if (!email || !email.includes('@')) {
+    return res.status(400).json({ success: false, error: 'A valid email address is required.' });
+  }
+
+  const cleanEmail = email.trim().toLowerCase();
+  const cleanName = (fullName || '').trim();
+  const cleanPhone = (phoneNumber || '').trim();
+  const cleanPassword = (password || '').trim();
+
+  if (cleanName.length < 2) {
+    return res.status(400).json({ success: false, error: 'Full name must be at least 2 characters.' });
+  }
+  if (cleanPhone.length < 7) {
+    return res.status(400).json({ success: false, error: 'Phone number must be at least 7 characters.' });
+  }
+  if (cleanPassword.length < 8) {
+    return res.status(400).json({ success: false, error: 'Password must be at least 8 characters long.' });
+  }
+
+  const locIds: string[] = Array.isArray(preferredLocalityIds) ? preferredLocalityIds : [];
+  if (locIds.length < 1) {
+    return res.status(400).json({ success: false, error: 'Please select at least 1 preferred service locality.' });
+  }
+
+  if (!supabaseAdmin) {
+    return res.status(503).json({
+      success: false,
+      error: 'Backend service key not configured for programmatic cleaner application.',
+    });
+  }
+
+  try {
+    // 1. Check if user already exists
+    const { data: userList } = await supabaseAdmin.auth.admin.listUsers();
+    const existing = userList?.users?.find((u) => u.email?.toLowerCase() === cleanEmail);
+    if (existing) {
+      return res.status(409).json({
+        success: false,
+        error: 'An account with this email address already exists. Please sign in or use another email.',
+      });
+    }
+
+    // 2. Create Supabase Auth user with email_confirm: true (no SMTP sending block)
+    const { data: created, error: createError } = await supabaseAdmin.auth.admin.createUser({
+      email: cleanEmail,
+      password: cleanPassword,
+      email_confirm: true,
+      user_metadata: {
+        full_name: cleanName,
+        phone_number: cleanPhone,
+        role: 'cleaner',
+      },
+      app_metadata: {
+        role: 'cleaner',
+      },
+    });
+
+    if (createError) {
+      return res.status(400).json({
+        success: false,
+        error: createError.message || 'Failed to create cleaner authentication account.',
+      });
+    }
+
+    const newUserId = created.user.id;
+
+    // 3. Upsert profiles record with role 'cleaner' and status 'pending'
+    await supabaseAdmin
+      .from('profiles')
+      .upsert(
+        {
+          id: newUserId,
+          full_name: cleanName,
+          phone_number: cleanPhone,
+          role: 'cleaner',
+          account_status: 'pending',
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: 'id' }
+      );
+
+    // 4. Create cleaner_applications record
+    await supabaseAdmin
+      .from('cleaner_applications')
+      .upsert(
+        {
+          cleaner_id: newUserId,
+          status: 'pending',
+          created_at: new Date().toISOString(),
+        },
+        { onConflict: 'cleaner_id' }
+      );
+
+    // 5. Record proposed service localities (unapproved)
+    for (const locId of locIds) {
+      await supabaseAdmin
+        .from('cleaner_service_areas')
+        .upsert(
+          {
+            cleaner_id: newUserId,
+            locality_id: locId,
+            is_approved: false,
+          },
+          { onConflict: 'cleaner_id,locality_id' }
+        );
+    }
+
+    return res.json({
+      success: true,
+      message:
+        'Cleaner application submitted successfully! Your account has been registered and is pending administrator review and supervisor assignment.',
+      user: {
+        id: newUserId,
+        email: cleanEmail,
+        fullName: cleanName,
+        phoneNumber: cleanPhone,
+        role: 'cleaner',
+        accountStatus: 'pending',
+      },
+    });
+  } catch (err: any) {
+    return res.status(500).json({
+      success: false,
+      error: err.message || 'Server error during cleaner registration.',
+    });
+  }
+});
+
+/**
+ * PATH B: Administrator Direct Cleaner Account Creation
+ * Allows an active Administrator to provision a verified Cleaner account directly,
+ * assign a Supervisor, configure authorized service areas, and set account status.
+ */
+app.post('/api/admin/create-cleaner', async (req: Request, res: Response) => {
+  const authCheck = await verifyAdminCaller(req.headers.authorization);
+  if (!authCheck.ok) {
+    return res.status(authCheck.status).json({ success: false, error: authCheck.error });
+  }
+
+  const { email, fullName, phoneNumber, password, supervisorId, localityIds, accountStatus } =
+    req.body || {};
+
+  if (!email || !email.includes('@')) {
+    return res.status(400).json({ success: false, error: 'A valid email address is required.' });
+  }
+
+  const cleanEmail = email.trim().toLowerCase();
+  const cleanName = (fullName || '').trim();
+  const cleanPhone = (phoneNumber || '').trim() || '0000000000';
+  const cleanPassword = (password || '').trim();
+  const cleanStatus = accountStatus === 'pending' ? 'pending' : 'active';
+  const assignedSupervisorId = supervisorId && supervisorId.trim() ? supervisorId.trim() : null;
+  const serviceLocalityIds: string[] = Array.isArray(localityIds) ? localityIds : [];
+
+  if (cleanName.length < 2) {
+    return res.status(400).json({ success: false, error: 'Full name must be at least 2 characters.' });
+  }
+  if (cleanPassword.length < 8) {
+    return res.status(400).json({ success: false, error: 'Initial password must be at least 8 characters long.' });
+  }
+
+  if (!supabaseAdmin) {
+    return res.status(503).json({ success: false, error: 'Supabase admin client unavailable.' });
+  }
+
+  try {
+    // Validate supervisor if specified
+    if (assignedSupervisorId) {
+      const { data: supProfile, error: supErr } = await supabaseAdmin
+        .from('profiles')
+        .select('id, full_name, role, account_status')
+        .eq('id', assignedSupervisorId)
+        .maybeSingle();
+
+      if (supErr || !supProfile || supProfile.role !== 'supervisor' || supProfile.account_status !== 'active') {
+        return res.status(400).json({
+          success: false,
+          error: 'The assigned supervisor must be an active, verified Supervisor account.',
+        });
+      }
+    }
+
+    // Check if user already exists
+    const { data: userList } = await supabaseAdmin.auth.admin.listUsers();
+    const existing = userList?.users?.find((u) => u.email?.toLowerCase() === cleanEmail);
+    if (existing) {
+      return res.status(409).json({
+        success: false,
+        error: 'An account with this email address already exists in Supabase Auth.',
+      });
+    }
+
+    // Create Supabase Auth user
+    const { data: created, error: createError } = await supabaseAdmin.auth.admin.createUser({
+      email: cleanEmail,
+      password: cleanPassword,
+      email_confirm: true,
+      user_metadata: {
+        full_name: cleanName,
+        phone_number: cleanPhone,
+        role: 'cleaner',
+      },
+      app_metadata: {
+        role: 'cleaner',
+      },
+    });
+
+    if (createError) {
+      return res.status(400).json({
+        success: false,
+        error: createError.message || 'Failed to create cleaner Auth user.',
+      });
+    }
+
+    const newUserId = created.user.id;
+
+    // Upsert profiles record
+    const profileData: Record<string, any> = {
+      id: newUserId,
+      full_name: cleanName,
+      phone_number: cleanPhone,
+      role: 'cleaner',
+      account_status: cleanStatus,
+      supervisor_id: assignedSupervisorId,
+      updated_at: new Date().toISOString(),
+    };
+
+    const { error: profErr } = await supabaseAdmin
+      .from('profiles')
+      .upsert(profileData, { onConflict: 'id' });
+
+    if (profErr) {
+      console.warn('Profiles upsert warning:', profErr.message);
+    }
+
+    // Insert approved cleaner_applications record
+    await supabaseAdmin
+      .from('cleaner_applications')
+      .upsert(
+        {
+          cleaner_id: newUserId,
+          status: cleanStatus === 'active' ? 'approved' : 'pending',
+          reviewer_id: authCheck.callerId,
+          assigned_supervisor_id: assignedSupervisorId,
+          review_notes: 'Created directly by Administrator.',
+          reviewed_at: cleanStatus === 'active' ? new Date().toISOString() : null,
+          created_at: new Date().toISOString(),
+        },
+        { onConflict: 'cleaner_id' }
+      );
+
+    // Insert service areas
+    for (const locId of serviceLocalityIds) {
+      await supabaseAdmin
+        .from('cleaner_service_areas')
+        .upsert(
+          {
+            cleaner_id: newUserId,
+            locality_id: locId,
+            is_approved: cleanStatus === 'active',
+            approved_by: cleanStatus === 'active' ? authCheck.callerId : null,
+            approved_at: cleanStatus === 'active' ? new Date().toISOString() : null,
+          },
+          { onConflict: 'cleaner_id,locality_id' }
+        );
+    }
+
+    return res.json({
+      success: true,
+      message: `Cleaner account for ${cleanName} (${cleanEmail}) successfully created with initial credentials.`,
+      user: {
+        id: newUserId,
+        email: cleanEmail,
+        fullName: cleanName,
+        phoneNumber: cleanPhone,
+        role: 'cleaner',
+        accountStatus: cleanStatus,
+        supervisorId: assignedSupervisorId,
+      },
+    });
+  } catch (err: any) {
+    return res.status(500).json({
+      success: false,
+      error: err.message || 'Server error during cleaner account creation.',
+    });
+  }
+});
+
+/**
+ * Administrator Endpoint: Review Cleaner Application (Approve / Reject)
+ * Assigns supervisor and approved service localities upon approval.
+ */
+app.post('/api/admin/review-cleaner-application', async (req: Request, res: Response) => {
+  const authCheck = await verifyAdminCaller(req.headers.authorization);
+  if (!authCheck.ok) {
+    return res.status(authCheck.status).json({ success: false, error: authCheck.error });
+  }
+
+  const { applicationId, decision, supervisorId, approvedLocalityIds, notes } = req.body || {};
+
+  if (!applicationId) {
+    return res.status(400).json({ success: false, error: 'Application ID is required.' });
+  }
+
+  if (decision !== 'approved' && decision !== 'rejected') {
+    return res.status(400).json({ success: false, error: 'Decision must be either "approved" or "rejected".' });
+  }
+
+  if (!supabaseAdmin) {
+    return res.status(503).json({ success: false, error: 'Supabase admin client unavailable.' });
+  }
+
+  try {
+    // 1. Fetch application
+    const { data: appData, error: appErr } = await supabaseAdmin
+      .from('cleaner_applications')
+      .select('*')
+      .eq('id', applicationId)
+      .maybeSingle();
+
+    if (appErr || !appData) {
+      return res.status(404).json({ success: false, error: 'Cleaner application not found.' });
+    }
+
+    if (appData.status !== 'pending') {
+      return res.status(400).json({
+        success: false,
+        error: `This application has already been processed (current status: ${appData.status}).`,
+      });
+    }
+
+    const cleanerId = appData.cleaner_id;
+    const cleanSupervisorId = supervisorId && supervisorId.trim() ? supervisorId.trim() : null;
+
+    if (decision === 'approved') {
+      if (cleanSupervisorId) {
+        const { data: supData, error: supErr } = await supabaseAdmin
+          .from('profiles')
+          .select('id, role, account_status')
+          .eq('id', cleanSupervisorId)
+          .maybeSingle();
+
+        if (supErr || !supData || supData.role !== 'supervisor' || supData.account_status !== 'active') {
+          return res.status(400).json({
+            success: false,
+            error: 'The assigned supervisor is not an active Supervisor account.',
+          });
+        }
+      }
+
+      // Update cleaner_applications
+      await supabaseAdmin
+        .from('cleaner_applications')
+        .update({
+          status: 'approved',
+          reviewer_id: authCheck.callerId,
+          assigned_supervisor_id: cleanSupervisorId,
+          review_notes: notes || null,
+          reviewed_at: new Date().toISOString(),
+        })
+        .eq('id', applicationId);
+
+      // Activate cleaner profile and assign supervisor
+      await supabaseAdmin
+        .from('profiles')
+        .update({
+          role: 'cleaner',
+          account_status: 'active',
+          supervisor_id: cleanSupervisorId,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', cleanerId);
+
+      // Approve selected localities
+      const approvedLocs: string[] = Array.isArray(approvedLocalityIds) ? approvedLocalityIds : [];
+      for (const locId of approvedLocs) {
+        await supabaseAdmin
+          .from('cleaner_service_areas')
+          .upsert(
+            {
+              cleaner_id: cleanerId,
+              locality_id: locId,
+              is_approved: true,
+              approved_by: authCheck.callerId,
+              approved_at: new Date().toISOString(),
+            },
+            { onConflict: 'cleaner_id,locality_id' }
+          );
+      }
+    } else {
+      // Rejected
+      await supabaseAdmin
+        .from('cleaner_applications')
+        .update({
+          status: 'rejected',
+          reviewer_id: authCheck.callerId,
+          review_notes: notes || 'Application rejected by Administrator.',
+          reviewed_at: new Date().toISOString(),
+        })
+        .eq('id', applicationId);
+
+      await supabaseAdmin
+        .from('profiles')
+        .update({
+          account_status: 'suspended',
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', cleanerId);
+    }
+
+    return res.json({
+      success: true,
+      status: decision,
+      message: `Cleaner application successfully ${decision}.`,
+    });
+  } catch (err: any) {
+    return res.status(500).json({
+      success: false,
+      error: err.message || 'Server error reviewing cleaner application.',
+    });
+  }
+});
+
+/**
+ * Administrator Endpoint: Update Cleaner Account Details
+ * Change supervisor assignment, toggle active/suspended status, or update service areas.
+ */
+app.post('/api/admin/update-cleaner', async (req: Request, res: Response) => {
+  const authCheck = await verifyAdminCaller(req.headers.authorization);
+  if (!authCheck.ok) {
+    return res.status(authCheck.status).json({ success: false, error: authCheck.error });
+  }
+
+  const { cleanerId, supervisorId, accountStatus, localityIds } = req.body || {};
+
+  if (!cleanerId) {
+    return res.status(400).json({ success: false, error: 'Cleaner ID is required.' });
+  }
+
+  if (!supabaseAdmin) {
+    return res.status(503).json({ success: false, error: 'Supabase admin client unavailable.' });
+  }
+
+  try {
+    const { data: cleanerProfile } = await supabaseAdmin
+      .from('profiles')
+      .select('*')
+      .eq('id', cleanerId)
+      .maybeSingle();
+
+    if (!cleanerProfile || cleanerProfile.role !== 'cleaner') {
+      return res.status(404).json({ success: false, error: 'Cleaner profile not found.' });
+    }
+
+    const updates: Record<string, any> = {
+      updated_at: new Date().toISOString(),
+    };
+
+    if (accountStatus && ['active', 'pending', 'suspended'].includes(accountStatus)) {
+      updates.account_status = accountStatus;
+    }
+
+    if (supervisorId !== undefined) {
+      if (supervisorId && supervisorId.trim()) {
+        const { data: supProfile } = await supabaseAdmin
+          .from('profiles')
+          .select('id, role, account_status')
+          .eq('id', supervisorId.trim())
+          .maybeSingle();
+
+        if (!supProfile || supProfile.role !== 'supervisor' || supProfile.account_status !== 'active') {
+          return res.status(400).json({
+            success: false,
+            error: 'Selected supervisor is invalid or not an active supervisor.',
+          });
+        }
+        updates.supervisor_id = supervisorId.trim();
+      } else {
+        updates.supervisor_id = null;
+      }
+    }
+
+    const { error: updateErr } = await supabaseAdmin
+      .from('profiles')
+      .update(updates)
+      .eq('id', cleanerId);
+
+    if (updateErr) {
+      return res.status(500).json({ success: false, error: updateErr.message });
+    }
+
+    // Update service areas if specified
+    if (Array.isArray(localityIds)) {
+      // First unapprove or delete current areas
+      await supabaseAdmin
+        .from('cleaner_service_areas')
+        .delete()
+        .eq('cleaner_id', cleanerId);
+
+      for (const locId of localityIds) {
+        await supabaseAdmin.from('cleaner_service_areas').insert({
+          cleaner_id: cleanerId,
+          locality_id: locId,
+          is_approved: true,
+          approved_by: authCheck.callerId,
+          approved_at: new Date().toISOString(),
+        });
+      }
+    }
+
+    return res.json({
+      success: true,
+      message: 'Cleaner details successfully updated.',
+    });
+  } catch (err: any) {
+    return res.status(500).json({
+      success: false,
+      error: err.message || 'Server error updating cleaner.',
+    });
+  }
+});
+
+/**
+ * Administrator Endpoint: Reset Cleaner Initial/Temporary Password
+ */
+app.post('/api/admin/reset-cleaner-password', async (req: Request, res: Response) => {
+  const authCheck = await verifyAdminCaller(req.headers.authorization);
+  if (!authCheck.ok) {
+    return res.status(authCheck.status).json({ success: false, error: authCheck.error });
+  }
+
+  const { cleanerId, newPassword } = req.body || {};
+
+  if (!cleanerId || !newPassword || typeof newPassword !== 'string' || newPassword.length < 8) {
+    return res.status(400).json({
+      success: false,
+      error: 'Cleaner ID and a new password of at least 8 characters are required.',
+    });
+  }
+
+  if (!supabaseAdmin) {
+    return res.status(503).json({ success: false, error: 'Supabase admin client unavailable.' });
+  }
+
+  try {
+    const { error: pwErr } = await supabaseAdmin.auth.admin.updateUserById(cleanerId, {
+      password: newPassword,
+    });
+
+    if (pwErr) {
+      return res.status(500).json({ success: false, error: pwErr.message });
+    }
+
+    return res.json({
+      success: true,
+      message: 'Cleaner password has been securely reset.',
+    });
+  } catch (err: any) {
+    return res.status(500).json({
+      success: false,
+      error: err.message || 'Server error resetting password.',
+    });
+  }
+});
+
 // Mount Vite in dev or serve static files in production
 async function startServer() {
   if (process.env.NODE_ENV === 'production') {

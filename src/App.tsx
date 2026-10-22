@@ -330,6 +330,8 @@ export default function App() {
                 users={users}
                 localities={localities}
                 complaints={complaints}
+                cleanerApplications={cleanerApplications}
+                serviceAreas={serviceAreas}
               />
             )}
           </div>

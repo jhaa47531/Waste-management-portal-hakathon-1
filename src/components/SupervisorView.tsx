@@ -52,7 +52,8 @@ export const SupervisorView: React.FC<SupervisorViewProps> = ({
   serviceAreas,
   cleanerApplications = [],
 }) => {
-  const [viewMode, setViewMode] = useState<'queue' | 'cleaners'>('queue');
+  const [viewMode, setViewMode] = useState<'queue' | 'cleaners' | 'my_cleaners'>('queue');
+  const myCleaners = users.filter((u) => u.role === 'cleaner' && u.supervisorId === currentUser.id);
 
   // Complaints Filters
   const [statusFilter, setStatusFilter] = useState<string>('all');
@@ -252,6 +253,17 @@ export const SupervisorView: React.FC<SupervisorViewProps> = ({
           >
             <ClipboardList className="w-4 h-4 text-emerald-400" />
             Operational Complaints Queue ({complaints.length})
+          </button>
+          <button
+            onClick={() => setViewMode('my_cleaners')}
+            className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer ${
+              viewMode === 'my_cleaners'
+                ? 'bg-slate-900 text-white shadow-xs'
+                : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+            }`}
+          >
+            <UserCheck className="w-4 h-4 text-blue-400" />
+            My Assigned Cleaners ({myCleaners.length})
           </button>
           <button
             onClick={() => setViewMode('cleaners')}
@@ -572,6 +584,121 @@ export const SupervisorView: React.FC<SupervisorViewProps> = ({
                   </tbody>
                 </table>
               </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* VIEW MODE: MY ASSIGNED CLEANERS */}
+      {viewMode === 'my_cleaners' && (
+        <div className="space-y-4">
+          <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs flex items-center justify-between">
+            <div>
+              <h3 className="text-base font-bold text-slate-900">
+                My Operational Cleaners Team ({myCleaners.length})
+              </h3>
+              <p className="text-xs text-slate-500 mt-0.5">
+                Cleaners assigned directly to your supervisory operational scope by the municipal administrator.
+              </p>
+            </div>
+          </div>
+
+          {myCleaners.length === 0 ? (
+            <div className="p-12 text-center bg-white rounded-2xl border border-slate-200 shadow-xs">
+              <UserCheck className="w-12 h-12 text-slate-300 mx-auto mb-3" />
+              <h4 className="text-base font-bold text-slate-800">No Cleaners Assigned to Your Team Yet</h4>
+              <p className="text-xs text-slate-500 mt-1 max-w-md mx-auto">
+                Municipal administrators assign certified cleaners to supervisors upon application review or account provisioning. Contact your administrator to assign cleaners to your team.
+              </p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {myCleaners.map((cleaner) => {
+                const cleanerServiceAreas = serviceAreas.filter(
+                  (sa) => sa.cleanerId === cleaner.id && sa.isApproved
+                );
+                const assignedTasks = complaints.filter(
+                  (c) => c.assignedCleanerId === cleaner.id
+                );
+                const inProgressTasks = assignedTasks.filter(
+                  (c) => c.status === 'in_progress'
+                );
+                const completedTasks = assignedTasks.filter(
+                  (c) => c.status === 'completed'
+                );
+
+                return (
+                  <div
+                    key={cleaner.id}
+                    className="bg-white border border-slate-200 rounded-2xl p-5 shadow-xs space-y-4"
+                  >
+                    <div className="flex items-start justify-between">
+                      <div className="flex items-center gap-2">
+                        <span className="w-8 h-8 rounded-xl bg-amber-100 text-amber-800 flex items-center justify-center font-bold text-xs">
+                          {cleaner.fullName.charAt(0)}
+                        </span>
+                        <div>
+                          <h4 className="font-bold text-sm text-slate-900">{cleaner.fullName}</h4>
+                          <p className="text-xs text-slate-500 font-mono">{cleaner.email}</p>
+                        </div>
+                      </div>
+                      <span
+                        className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider border ${
+                          cleaner.accountStatus === 'active'
+                            ? 'bg-emerald-50 text-emerald-800 border-emerald-300'
+                            : 'bg-rose-50 text-rose-800 border-rose-300'
+                        }`}
+                      >
+                        {cleaner.accountStatus}
+                      </span>
+                    </div>
+
+                    <div className="text-xs text-slate-600">
+                      <span className="text-slate-400">Phone: </span>
+                      <span className="font-medium">{cleaner.phoneNumber}</span>
+                    </div>
+
+                    {/* Authorized Localities */}
+                    <div className="space-y-1 text-xs">
+                      <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">
+                        Authorized Service Localities:
+                      </span>
+                      <div className="flex flex-wrap gap-1">
+                        {cleanerServiceAreas.length > 0 ? (
+                          cleanerServiceAreas.map((sa) => (
+                            <span
+                              key={sa.localityId}
+                              className="px-2 py-0.5 rounded-md text-[10px] font-semibold bg-emerald-50 border border-emerald-200 text-emerald-800"
+                            >
+                              {sa.localityName}
+                            </span>
+                          ))
+                        ) : (
+                          <span className="text-amber-700 italic text-[11px]">
+                            No service areas approved yet
+                          </span>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Work Assignment Counters */}
+                    <div className="grid grid-cols-3 gap-2 pt-2 border-t border-slate-100 text-center">
+                      <div className="p-2 bg-slate-50 rounded-xl">
+                        <span className="text-sm font-black text-slate-800">{assignedTasks.length}</span>
+                        <p className="text-[9px] uppercase font-bold text-slate-400">Assigned</p>
+                      </div>
+                      <div className="p-2 bg-purple-50 rounded-xl">
+                        <span className="text-sm font-black text-purple-800">{inProgressTasks.length}</span>
+                        <p className="text-[9px] uppercase font-bold text-purple-600">In Progress</p>
+                      </div>
+                      <div className="p-2 bg-emerald-50 rounded-xl">
+                        <span className="text-sm font-black text-emerald-800">{completedTasks.length}</span>
+                        <p className="text-[9px] uppercase font-bold text-emerald-600">Completed</p>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           )}
         </div>
@@ -947,7 +1074,7 @@ export const SupervisorView: React.FC<SupervisorViewProps> = ({
                       <option value="">-- Choose an eligible cleaner --</option>
                       {eligibleCleaners.map((cl) => (
                         <option key={cl.id} value={cl.id}>
-                          {cl.fullName} ({cl.email})
+                          {cl.fullName} {cl.supervisorId === currentUser.id ? '★ (My Team)' : ''} ({cl.email})
                         </option>
                       ))}
                     </select>

@@ -161,9 +161,9 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       return;
     }
     const activeLocCount = localities.filter((l) => l.active).length;
-    const minRequired = Math.min(3, activeLocCount);
+    const minRequired = Math.min(1, activeLocCount);
     if (selectedLocalityIds.length < minRequired) {
-      setError(`Please select at least ${minRequired} preferred service localities.`);
+      setError(`Please select at least ${minRequired} preferred service locality.`);
       return;
     }
     if (selectedLocalityIds.length > 5) {
@@ -494,15 +494,15 @@ export const AuthModal: React.FC<AuthModalProps> = ({
               </div>
             </div>
 
-            {/* Preferred Localities (Select 3-5) */}
+            {/* Preferred Localities (Select 1-5) */}
             <div className="space-y-1.5 pt-1">
               <div className="flex items-center justify-between">
                 <label className="block font-bold text-slate-700">
-                  Select Preferred Service Localities (3 to 5) *
+                  Select Preferred Service Localities (1 to 5) *
                 </label>
                 <span
                   className={`text-[11px] font-bold px-2 py-0.5 rounded-full ${
-                    selectedLocalityIds.length >= 3 && selectedLocalityIds.length <= 5
+                    selectedLocalityIds.length >= 1 && selectedLocalityIds.length <= 5
                       ? 'bg-emerald-100 text-emerald-800'
                       : 'bg-amber-100 text-amber-800'
                   }`}

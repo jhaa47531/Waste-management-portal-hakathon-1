@@ -343,3 +343,143 @@ export function checkStorageUploadAuthorization(
 
   return { allowed: false, reason: 'Unauthorized folder path.' };
 }
+
+/**
+ * Validates self-registration input for cleaner applicants (Path A).
+ */
+export function validateCleanerApplicationInput(input: {
+  email?: string | null;
+  fullName?: string | null;
+  phoneNumber?: string | null;
+  password?: string | null;
+  preferredLocalityIds?: string[] | null;
+}): { valid: boolean; errors: Record<string, string> } {
+  const errors: Record<string, string> = {};
+
+  const cleanEmail = (input.email || '').trim().toLowerCase();
+  const cleanName = (input.fullName || '').trim();
+  const cleanPhone = (input.phoneNumber || '').trim();
+  const password = input.password || '';
+  const localityIds = Array.isArray(input.preferredLocalityIds) ? input.preferredLocalityIds : [];
+
+  if (!cleanEmail || !cleanEmail.includes('@') || !cleanEmail.includes('.')) {
+    errors.email = 'A valid email address is required.';
+  }
+
+  if (cleanName.length < 2) {
+    errors.fullName = 'Full name must be at least 2 characters.';
+  }
+
+  if (cleanPhone.length < 7) {
+    errors.phoneNumber = 'Phone number must be at least 7 characters.';
+  }
+
+  if (password.length < 8) {
+    errors.password = 'Initial password must be at least 8 characters long.';
+  }
+
+  if (localityIds.length < 1) {
+    errors.preferredLocalityIds = 'Please select at least 1 preferred service locality.';
+  }
+
+  return {
+    valid: Object.keys(errors).length === 0,
+    errors,
+  };
+}
+
+/**
+ * Validates direct Administrator cleaner account creation (Path B).
+ */
+export function validateCleanerCreationInput(input: {
+  email?: string | null;
+  fullName?: string | null;
+  phoneNumber?: string | null;
+  password?: string | null;
+  supervisorId?: string | null;
+  localityIds?: string[] | null;
+  accountStatus?: string | null;
+}): { valid: boolean; errors: Record<string, string> } {
+  const errors: Record<string, string> = {};
+
+  const cleanEmail = (input.email || '').trim().toLowerCase();
+  const cleanName = (input.fullName || '').trim();
+  const cleanPhone = (input.phoneNumber || '').trim();
+  const password = input.password || '';
+  const localityIds = Array.isArray(input.localityIds) ? input.localityIds : [];
+
+  if (!cleanEmail || !cleanEmail.includes('@')) {
+    errors.email = 'A valid email address is required.';
+  }
+
+  if (cleanName.length < 2) {
+    errors.fullName = 'Full name must be at least 2 characters.';
+  }
+
+  if (cleanPhone.length < 7) {
+    errors.phoneNumber = 'Phone number must be at least 7 characters.';
+  }
+
+  if (password.length < 8) {
+    errors.password = 'Initial password must be at least 8 characters long.';
+  }
+
+  if (localityIds.length < 1) {
+    errors.localityIds = 'Please select at least 1 authorized service locality.';
+  }
+
+  if (input.accountStatus && !['active', 'pending', 'suspended'].includes(input.accountStatus)) {
+    errors.accountStatus = 'Account status must be active, pending, or suspended.';
+  }
+
+  return {
+    valid: Object.keys(errors).length === 0,
+    errors,
+  };
+}
+
+/**
+ * Validates Supervisor assignment to a Cleaner.
+ * Only valid, active Supervisor accounts can be assigned.
+ */
+export function validateSupervisorAssignment(
+  supervisor: { id: string; role: string; accountStatus: string } | null | undefined
+): { valid: boolean; error?: string } {
+  if (!supervisor) {
+    return { valid: false, error: 'A valid supervisor account is required.' };
+  }
+
+  if (supervisor.role !== 'supervisor') {
+    return { valid: false, error: `Invalid role: User '${supervisor.id}' has role '${supervisor.role}' and is not a supervisor.` };
+  }
+
+  if (supervisor.accountStatus !== 'active') {
+    return { valid: false, error: `Supervisor account '${supervisor.id}' is inactive or suspended (status: '${supervisor.accountStatus}').` };
+  }
+
+  return { valid: true };
+}
+
+/**
+ * Validates that a Cleaner can strictly access only complaints assigned to them,
+ * preventing cross-cleaner unauthorized data access.
+ */
+export function validateCleanerAccessToComplaint(
+  cleanerId: string,
+  complaint: { assignedCleanerId?: string | null }
+): { allowed: boolean; reason?: string } {
+  if (!cleanerId) {
+    return { allowed: false, reason: 'Cleaner identification required.' };
+  }
+
+  if (!complaint.assignedCleanerId) {
+    return { allowed: false, reason: 'Complaint is unassigned.' };
+  }
+
+  if (complaint.assignedCleanerId !== cleanerId) {
+    return { allowed: false, reason: 'Cross-cleaner access denied: This complaint is assigned to a different cleaner.' };
+  }
+
+  return { allowed: true };
+}
+

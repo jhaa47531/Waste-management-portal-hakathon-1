@@ -186,6 +186,16 @@ class PortalStore {
       }
 
       if (profile) {
+        let supervisorName: string | null = null;
+        if (profile.supervisor_id) {
+          const { data: supProfile } = await supabase
+            .from('profiles')
+            .select('full_name')
+            .eq('id', profile.supervisor_id)
+            .maybeSingle();
+          supervisorName = supProfile?.full_name || null;
+        }
+
         const user: UserProfile = {
           id: profile.id,
           email: email || profile.email || '',
@@ -193,6 +203,8 @@ class PortalStore {
           phoneNumber: profile.phone_number || profile.phone || '',
           role: profile.role === 'admin' ? 'administrator' : profile.role,
           accountStatus: profile.account_status,
+          supervisorId: profile.supervisor_id || null,
+          supervisorName,
           createdAt: profile.created_at,
           updatedAt: profile.updated_at,
         };
@@ -284,20 +296,32 @@ class PortalStore {
         }));
       }
 
-      // 3. If supervisor/admin, fetch profiles and service areas
+      // 3. If supervisor/admin, fetch profiles, service areas, and applications
       if (this.state.currentUser && isSupervisorOrAdmin(this.state.currentUser.role)) {
         const { data: profs } = await supabase.from('profiles').select('*');
         if (profs) {
-          this.state.users = profs.map((p: any) => ({
+          const userList = profs.map((p: any) => ({
             id: p.id,
             email: p.email || '',
             fullName: p.full_name,
-            phoneNumber: p.phone_number,
-            role: p.role,
+            phoneNumber: p.phone_number || p.phone || '',
+            role: p.role === 'admin' ? 'administrator' : p.role,
             accountStatus: p.account_status,
+            supervisorId: p.supervisor_id || null,
+            supervisorName: null as string | null,
             createdAt: p.created_at,
             updatedAt: p.updated_at,
           }));
+
+          // Resolve supervisor names
+          userList.forEach((u: any) => {
+            if (u.supervisorId) {
+              const sup = userList.find((s: any) => s.id === u.supervisorId);
+              if (sup) u.supervisorName = sup.fullName;
+            }
+          });
+
+          this.state.users = userList;
         }
 
         const { data: saList } = await supabase
@@ -317,17 +341,54 @@ class PortalStore {
 
         const { data: apps } = await supabase.from('cleaner_applications').select('*');
         if (apps) {
-          this.state.cleanerApplications = apps.map((a: any) => ({
-            id: a.id,
-            cleanerId: a.cleaner_id,
-            cleanerName: a.cleaner_name || 'Cleaner Applicant',
-            cleanerEmail: a.cleaner_email || '',
-            status: a.status,
-            reviewerId: a.reviewer_id,
-            reviewNotes: a.review_notes,
-            reviewedAt: a.reviewed_at,
-            createdAt: a.created_at,
+          this.state.cleanerApplications = apps.map((a: any) => {
+            const cleanerProf = this.state.users.find((u) => u.id === a.cleaner_id);
+            const supProf = a.assigned_supervisor_id
+              ? this.state.users.find((u) => u.id === a.assigned_supervisor_id)
+              : null;
+            return {
+              id: a.id,
+              cleanerId: a.cleaner_id,
+              cleanerName: cleanerProf?.fullName || a.cleaner_name || 'Cleaner Applicant',
+              cleanerEmail: cleanerProf?.email || a.cleaner_email || '',
+              cleanerPhone: cleanerProf?.phoneNumber || '',
+              status: a.status,
+              assignedSupervisorId: a.assigned_supervisor_id || null,
+              assignedSupervisorName: supProf?.fullName || null,
+              reviewerId: a.reviewer_id,
+              reviewNotes: a.review_notes,
+              reviewedAt: a.reviewed_at,
+              createdAt: a.created_at,
+            };
+          });
+        }
+      } else if (this.state.currentUser && this.state.currentUser.role === 'cleaner') {
+        // Cleaner: fetch their own service areas and supervisor details
+        const { data: saList } = await supabase
+          .from('cleaner_service_areas')
+          .select('*, locality:localities(name)')
+          .eq('cleaner_id', this.state.currentUser.id);
+        if (saList) {
+          this.state.serviceAreas = saList.map((sa: any) => ({
+            id: sa.id,
+            cleanerId: sa.cleaner_id,
+            localityId: sa.locality_id,
+            localityName: sa.locality?.name || 'Locality',
+            isApproved: sa.is_approved,
+            approvedBy: sa.approved_by,
+            approvedAt: sa.approved_at,
           }));
+        }
+
+        if (this.state.currentUser.supervisorId && !this.state.currentUser.supervisorName) {
+          const { data: supProf } = await supabase
+            .from('profiles')
+            .select('full_name')
+            .eq('id', this.state.currentUser.supervisorId)
+            .maybeSingle();
+          if (supProf?.full_name) {
+            this.state.currentUser.supervisorName = supProf.full_name;
+          }
         }
       }
     } catch (err: any) {
@@ -517,62 +578,66 @@ class PortalStore {
     if (
       !params.preferredLocalityIds ||
       params.preferredLocalityIds.length < 1 ||
-      (this.state.localities.length >= 3 && params.preferredLocalityIds.length < 3) ||
       params.preferredLocalityIds.length > 5
     ) {
       return {
         success: false,
-        error: 'Please select between 3 and 5 preferred service localities.',
+        error: 'Please select between 1 and 5 preferred service localities.',
       };
     }
 
     if (this.isLive && supabase && params.password) {
       try {
-        const { data, error } = await supabase.auth.signUp({
-          email: cleanEmail,
-          password: params.password,
-          options: {
-            data: {
-              full_name: cleanName,
-              phone_number: cleanPhone,
-            },
-          },
-        });
-        if (error) {
-          return { success: false, error: error.message };
-        }
-        if (data.user) {
-          // Submit cleaner application row
-          await supabase.from('cleaner_applications').insert({
-            cleaner_id: data.user.id,
-            status: 'pending',
-          });
-
-          // Propose preferred service areas (unapproved)
-          for (const locId of params.preferredLocalityIds) {
-            await supabase.from('cleaner_service_areas').insert({
-              cleaner_id: data.user.id,
-              locality_id: locId,
-              is_approved: false,
-            });
-          }
-
-          const user: UserProfile = {
-            id: data.user.id,
+        const apiRes = await fetch('/api/cleaner/apply', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
             email: cleanEmail,
             fullName: cleanName,
             phoneNumber: cleanPhone,
-            role: 'cleaner',
-            accountStatus: 'pending',
-            createdAt: new Date().toISOString(),
-            updatedAt: new Date().toISOString(),
+            password: params.password,
+            preferredLocalityIds: params.preferredLocalityIds,
+          }),
+        });
+
+        const apiData = await apiRes.json().catch(() => null);
+
+        if (apiRes.ok && apiData?.success) {
+          // Attempt sign in with newly created credentials
+          const { data: signInData } = await supabase.auth.signInWithPassword({
+            email: cleanEmail,
+            password: params.password,
+          });
+
+          if (signInData?.user) {
+            await this.syncProfileFromSupabase(signInData.user.id, cleanEmail);
+          } else {
+            const user: UserProfile = {
+              id: apiData.user?.id || `usr-cleaner-${Date.now()}`,
+              email: cleanEmail,
+              fullName: cleanName,
+              phoneNumber: cleanPhone,
+              role: 'cleaner',
+              accountStatus: 'pending',
+              createdAt: new Date().toISOString(),
+              updatedAt: new Date().toISOString(),
+            };
+            this.state.currentUser = user;
+            this.notify();
+          }
+
+          await this.loadSupabaseData();
+          return {
+            success: true,
+            user: this.state.currentUser || apiData.user,
           };
-          this.state.currentUser = user;
-          this.notify();
-          return { success: true, user };
+        } else if (apiData?.error) {
+          return { success: false, error: apiData.error };
+        } else if (!apiRes.ok) {
+          return { success: false, error: `Registration error (${apiRes.status}) from server.` };
         }
       } catch (err: any) {
-        return { success: false, error: err.message || 'Cleaner registration failed.' };
+        return { success: false, error: err.message || 'Cleaner application submission failed.' };
       }
     }
 
@@ -1652,10 +1717,132 @@ class PortalStore {
     return { success: true, user: newSupervisor };
   }
 
+  public async createCleanerByAdmin(params: {
+    email: string;
+    fullName: string;
+    phoneNumber: string;
+    password: string;
+    supervisorId?: string | null;
+    localityIds: string[];
+    accountStatus?: 'active' | 'pending';
+  }): Promise<{ success: boolean; user?: UserProfile; error?: string }> {
+    const user = this.state.currentUser;
+    if (!user || !isAdministrator(user.role)) {
+      return { success: false, error: 'Access denied: Only administrators can create cleaner accounts directly.' };
+    }
+
+    const cleanEmail = params.email.trim().toLowerCase();
+    const cleanName = params.fullName.trim();
+    const cleanPhone = params.phoneNumber.trim();
+    const cleanPassword = params.password.trim();
+    const cleanStatus = params.accountStatus === 'pending' ? 'pending' : 'active';
+    const assignedSupId = params.supervisorId && params.supervisorId.trim() ? params.supervisorId.trim() : null;
+
+    if (!cleanEmail || !cleanEmail.includes('@')) {
+      return { success: false, error: 'A valid email address is required.' };
+    }
+    if (cleanName.length < 2) {
+      return { success: false, error: 'Full name must be at least 2 characters.' };
+    }
+    if (cleanPassword.length < 8) {
+      return { success: false, error: 'Initial password must be at least 8 characters long.' };
+    }
+
+    if (this.isLive && supabase) {
+      try {
+        const { data: sessionData } = await supabase.auth.getSession();
+        const token = sessionData?.session?.access_token;
+        if (!token) {
+          return { success: false, error: 'Admin session token not found. Please re-authenticate.' };
+        }
+
+        const apiRes = await fetch('/api/admin/create-cleaner', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({
+            email: cleanEmail,
+            fullName: cleanName,
+            phoneNumber: cleanPhone,
+            password: cleanPassword,
+            supervisorId: assignedSupId,
+            localityIds: params.localityIds || [],
+            accountStatus: cleanStatus,
+          }),
+        });
+
+        const apiData = await apiRes.json().catch(() => null);
+        if (apiRes.ok && apiData?.success) {
+          await this.loadSupabaseData();
+          return { success: true, user: apiData.user };
+        } else {
+          return { success: false, error: apiData?.error || `Server error (${apiRes.status}) creating cleaner.` };
+        }
+      } catch (err: any) {
+        return { success: false, error: err.message || 'Failed to create cleaner account.' };
+      }
+    }
+
+    // Local / In-memory Fallback
+    if (this.state.users.some((u) => u.email.toLowerCase() === cleanEmail)) {
+      return { success: false, error: 'An account with this email address already exists.' };
+    }
+
+    const newCleanerId = `usr-cleaner-${Date.now()}`;
+    const supUser = assignedSupId ? this.state.users.find((u) => u.id === assignedSupId) : null;
+    const newCleaner: UserProfile = {
+      id: newCleanerId,
+      email: cleanEmail,
+      fullName: cleanName,
+      phoneNumber: cleanPhone,
+      role: 'cleaner',
+      accountStatus: cleanStatus,
+      supervisorId: assignedSupId,
+      supervisorName: supUser?.fullName || null,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+
+    this.state.users.push(newCleaner);
+
+    for (const locId of params.localityIds) {
+      const loc = this.state.localities.find((l) => l.id === locId);
+      this.state.serviceAreas.push({
+        id: `sa-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+        cleanerId: newCleanerId,
+        localityId: locId,
+        localityName: loc ? loc.name : 'Locality',
+        isApproved: cleanStatus === 'active',
+        approvedBy: user.id,
+        approvedAt: cleanStatus === 'active' ? new Date().toISOString() : undefined,
+      });
+    }
+
+    this.state.cleanerApplications.push({
+      id: `app-${Date.now()}`,
+      cleanerId: newCleanerId,
+      cleanerName: cleanName,
+      cleanerEmail: cleanEmail,
+      cleanerPhone: cleanPhone,
+      status: cleanStatus === 'active' ? 'approved' : 'pending',
+      assignedSupervisorId: assignedSupId,
+      assignedSupervisorName: supUser?.fullName || null,
+      reviewerId: user.id,
+      reviewedAt: cleanStatus === 'active' ? new Date().toISOString() : undefined,
+      createdAt: new Date().toISOString(),
+    });
+
+    this.notify();
+    return { success: true, user: newCleaner };
+  }
+
   public async reviewCleanerApplication(
     applicationId: string,
     decision: 'approved' | 'rejected',
     approvedLocalityIds: string[] = [],
+    supervisorId?: string | null,
     notes?: string
   ): Promise<{ success: boolean; error?: string }> {
     const user = this.state.currentUser;
@@ -1665,13 +1852,50 @@ class PortalStore {
 
     if (this.isLive && supabase) {
       try {
-        const { error } = await supabase.rpc('review_cleaner_application', {
+        const { data: sessionData } = await supabase.auth.getSession();
+        const token = sessionData?.session?.access_token;
+        if (token) {
+          const apiRes = await fetch('/api/admin/review-cleaner-application', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${token}`,
+            },
+            body: JSON.stringify({
+              applicationId,
+              decision,
+              supervisorId: supervisorId || null,
+              approvedLocalityIds,
+              notes,
+            }),
+          });
+          const apiData = await apiRes.json().catch(() => null);
+          if (apiRes.ok && apiData?.success) {
+            await this.loadSupabaseData();
+            return { success: true };
+          }
+          if (apiData?.error) {
+            return { success: false, error: apiData.error };
+          }
+        }
+
+        // Fallback to direct RPC
+        const { error } = await supabase.rpc('review_cleaner_application_v2', {
           p_application_id: applicationId,
           p_decision: decision,
           p_approved_locality_ids: approvedLocalityIds,
+          p_supervisor_id: supervisorId || null,
           p_notes: notes || null,
         });
-        if (error) return { success: false, error: error.message };
+        if (error) {
+          const { error: errLegacy } = await supabase.rpc('review_cleaner_application', {
+            p_application_id: applicationId,
+            p_decision: decision,
+            p_approved_locality_ids: approvedLocalityIds,
+            p_notes: notes || null,
+          });
+          if (errLegacy) return { success: false, error: errLegacy.message };
+        }
         await this.loadSupabaseData();
         return { success: true };
       } catch (err: any) {
@@ -1679,6 +1903,7 @@ class PortalStore {
       }
     }
 
+    // Local / In-memory fallback
     const app = this.state.cleanerApplications.find((a) => a.id === applicationId);
     if (!app) return { success: false, error: 'Application not found.' };
 
@@ -1687,12 +1912,18 @@ class PortalStore {
     app.reviewerId = user.id;
     app.reviewNotes = notes;
     app.reviewedAt = timestamp;
+    app.assignedSupervisorId = supervisorId || null;
+
+    const sup = supervisorId ? this.state.users.find((u) => u.id === supervisorId) : null;
+    app.assignedSupervisorName = sup?.fullName || null;
 
     const cleaner = this.state.users.find((u) => u.id === app.cleanerId);
     if (cleaner) {
       if (decision === 'approved') {
         cleaner.role = 'cleaner';
         cleaner.accountStatus = 'active';
+        cleaner.supervisorId = supervisorId || null;
+        cleaner.supervisorName = sup?.fullName || null;
         cleaner.updatedAt = timestamp;
 
         this.state.serviceAreas.forEach((sa) => {
@@ -1708,6 +1939,116 @@ class PortalStore {
     }
 
     this.notify();
+    return { success: true };
+  }
+
+  public async updateCleaner(params: {
+    cleanerId: string;
+    supervisorId?: string | null;
+    accountStatus?: 'active' | 'pending' | 'suspended';
+    localityIds?: string[];
+  }): Promise<{ success: boolean; error?: string }> {
+    const user = this.state.currentUser;
+    if (!user || !isAdministrator(user.role)) {
+      return { success: false, error: 'Access denied: Only administrators can update cleaner settings.' };
+    }
+
+    if (this.isLive && supabase) {
+      try {
+        const { data: sessionData } = await supabase.auth.getSession();
+        const token = sessionData?.session?.access_token;
+        if (!token) return { success: false, error: 'Authentication required.' };
+
+        const apiRes = await fetch('/api/admin/update-cleaner', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify(params),
+        });
+
+        const apiData = await apiRes.json().catch(() => null);
+        if (apiRes.ok && apiData?.success) {
+          await this.loadSupabaseData();
+          return { success: true };
+        } else {
+          return { success: false, error: apiData?.error || 'Failed to update cleaner.' };
+        }
+      } catch (err: any) {
+        return { success: false, error: err.message };
+      }
+    }
+
+    // Local state fallback
+    const cleaner = this.state.users.find((u) => u.id === params.cleanerId);
+    if (!cleaner) return { success: false, error: 'Cleaner not found.' };
+
+    const timestamp = new Date().toISOString();
+    if (params.accountStatus) cleaner.accountStatus = params.accountStatus;
+    if (params.supervisorId !== undefined) {
+      cleaner.supervisorId = params.supervisorId || null;
+      const sup = params.supervisorId ? this.state.users.find((u) => u.id === params.supervisorId) : null;
+      cleaner.supervisorName = sup?.fullName || null;
+    }
+    cleaner.updatedAt = timestamp;
+
+    if (Array.isArray(params.localityIds)) {
+      this.state.serviceAreas = this.state.serviceAreas.filter((sa) => sa.cleanerId !== cleaner.id);
+      for (const locId of params.localityIds) {
+        const loc = this.state.localities.find((l) => l.id === locId);
+        this.state.serviceAreas.push({
+          id: `sa-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+          cleanerId: cleaner.id,
+          localityId: locId,
+          localityName: loc?.name || 'Locality',
+          isApproved: cleaner.accountStatus === 'active',
+          approvedBy: user.id,
+          approvedAt: timestamp,
+        });
+      }
+    }
+
+    this.notify();
+    return { success: true };
+  }
+
+  public async resetCleanerPassword(cleanerId: string, newPassword: string): Promise<{ success: boolean; error?: string }> {
+    const user = this.state.currentUser;
+    if (!user || !isAdministrator(user.role)) {
+      return { success: false, error: 'Access denied: Only administrators can reset cleaner credentials.' };
+    }
+
+    if (newPassword.length < 8) {
+      return { success: false, error: 'Password must be at least 8 characters long.' };
+    }
+
+    if (this.isLive && supabase) {
+      try {
+        const { data: sessionData } = await supabase.auth.getSession();
+        const token = sessionData?.session?.access_token;
+        if (!token) return { success: false, error: 'Authentication required.' };
+
+        const apiRes = await fetch('/api/admin/reset-cleaner-password', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({ cleanerId, newPassword }),
+        });
+
+        const apiData = await apiRes.json().catch(() => null);
+        if (apiRes.ok && apiData?.success) {
+          return { success: true };
+        } else {
+          return { success: false, error: apiData?.error || 'Failed to reset password.' };
+        }
+      } catch (err: any) {
+        return { success: false, error: err.message };
+      }
+    }
+
     return { success: true };
   }
 

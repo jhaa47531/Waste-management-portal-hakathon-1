@@ -23,6 +23,8 @@ export interface UserProfile {
   phoneNumber: string;
   role: UserRole;
   accountStatus: AccountStatus;
+  supervisorId?: string | null;
+  supervisorName?: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -38,10 +40,14 @@ export interface CleanerApplication {
   cleanerId: string;
   cleanerName: string;
   cleanerEmail: string;
+  cleanerPhone?: string;
   status: 'pending' | 'approved' | 'rejected';
+  assignedSupervisorId?: string | null;
+  assignedSupervisorName?: string | null;
   reviewerId?: string;
   reviewNotes?: string;
   reviewedAt?: string;
+  preferredLocalityIds?: string[];
   createdAt: string;
 }
 

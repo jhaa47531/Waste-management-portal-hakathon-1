@@ -13,6 +13,12 @@ import {
   validateCleanerAssignment,
   canTransitionStatus,
   checkStorageUploadAuthorization,
+  validateCleanerApplicationInput,
+  validateCleanerCreationInput,
+  validateSupervisorAssignment,
+  validateCleanerAccessToComplaint,
+  isAdministrator,
+  isSupervisorOrAdmin,
 } from './rules.ts';
 
 test('validateGpsCoordinates rejects null, undefined, out of bounds, and zero island', () => {
@@ -249,5 +255,140 @@ test('checkStorageUploadAuthorization strictly validates uploader folder ownersh
   );
   assert.equal(adminUpload.allowed, true);
 });
+
+test('Cleaner self-registration input validation (Path A) enforces all required fields and locality bounds', () => {
+  // Empty input
+  const emptyRes = validateCleanerApplicationInput({});
+  assert.equal(emptyRes.valid, false);
+  assert.ok(emptyRes.errors.email);
+  assert.ok(emptyRes.errors.fullName);
+  assert.ok(emptyRes.errors.phoneNumber);
+  assert.ok(emptyRes.errors.password);
+  assert.ok(emptyRes.errors.preferredLocalityIds);
+
+  // Short password (< 8 chars)
+  const shortPwRes = validateCleanerApplicationInput({
+    email: 'cleaner@example.com',
+    fullName: 'Cleaner Joe',
+    phoneNumber: '+1-555-0123',
+    password: 'short',
+    preferredLocalityIds: ['loc-1'],
+  });
+  assert.equal(shortPwRes.valid, false);
+  assert.match(shortPwRes.errors.password, /at least 8 characters/);
+
+  // Valid self-registration input
+  const validRes = validateCleanerApplicationInput({
+    email: 'cleaner.joe@example.com',
+    fullName: 'Cleaner Joe',
+    phoneNumber: '+1-555-0123',
+    password: 'SecurePassword123!',
+    preferredLocalityIds: ['loc-1', 'loc-2'],
+  });
+  assert.equal(validRes.valid, true);
+  assert.deepEqual(validRes.errors, {});
+});
+
+test('Administrator-created Cleaner account validation (Path B) verifies all administrative parameters', () => {
+  // Missing required parameters
+  const invalidAdminRes = validateCleanerCreationInput({
+    fullName: 'A',
+    phoneNumber: '123',
+    email: 'invalid-email',
+    password: '123',
+    localityIds: [],
+  });
+  assert.equal(invalidAdminRes.valid, false);
+  assert.ok(invalidAdminRes.errors.fullName);
+  assert.ok(invalidAdminRes.errors.phoneNumber);
+  assert.ok(invalidAdminRes.errors.email);
+  assert.ok(invalidAdminRes.errors.password);
+  assert.ok(invalidAdminRes.errors.localityIds);
+
+  // Valid direct creation
+  const validAdminRes = validateCleanerCreationInput({
+    fullName: 'Carlos Mendoza',
+    phoneNumber: '+1-555-0198',
+    email: 'carlos.m@civicwaste.org',
+    password: 'InitialPassword89#',
+    supervisorId: 'sup-1',
+    localityIds: ['loc-1'],
+    accountStatus: 'active',
+  });
+  assert.equal(validAdminRes.valid, true);
+});
+
+test('Supervisor assignment rejects invalid, non-supervisor, or inactive supervisors', () => {
+  // Missing supervisor
+  assert.equal(validateSupervisorAssignment(null).valid, false);
+  assert.equal(validateSupervisorAssignment(undefined).valid, false);
+
+  // Assigned user is not a supervisor (e.g. resident or cleaner)
+  const residentUser = { id: 'usr-1', role: 'resident', accountStatus: 'active' };
+  const roleCheck = validateSupervisorAssignment(residentUser);
+  assert.equal(roleCheck.valid, false);
+  assert.match(roleCheck.error || '', /is not a supervisor/);
+
+  const cleanerUser = { id: 'usr-2', role: 'cleaner', accountStatus: 'active' };
+  assert.equal(validateSupervisorAssignment(cleanerUser).valid, false);
+
+  // Supervisor account is suspended or pending
+  const inactiveSup = { id: 'sup-2', role: 'supervisor', accountStatus: 'suspended' };
+  const inactiveCheck = validateSupervisorAssignment(inactiveSup);
+  assert.equal(inactiveCheck.valid, false);
+  assert.match(inactiveCheck.error || '', /inactive or suspended/);
+
+  // Valid active supervisor
+  const activeSup = { id: 'sup-1', role: 'supervisor', accountStatus: 'active' };
+  const validSupCheck = validateSupervisorAssignment(activeSup);
+  assert.equal(validSupCheck.valid, true);
+});
+
+test('Cleaner access to own assignments strictly prevents cross-cleaner unauthorized data access', () => {
+  const complaintAlice = { assignedCleanerId: 'cleaner-alice' };
+  const complaintUnassigned = { assignedCleanerId: null };
+
+  // Cleaner Alice accessing Alice's assignment
+  assert.equal(validateCleanerAccessToComplaint('cleaner-alice', complaintAlice).allowed, true);
+
+  // Cleaner Bob attempting to access Alice's assignment (Cross-Cleaner access denial)
+  const crossAccess = validateCleanerAccessToComplaint('cleaner-bob', complaintAlice);
+  assert.equal(crossAccess.allowed, false);
+  assert.match(crossAccess.reason || '', /Cross-cleaner access denied/);
+
+  // Accessing unassigned complaint
+  const unassignedAccess = validateCleanerAccessToComplaint('cleaner-alice', complaintUnassigned);
+  assert.equal(unassignedAccess.allowed, false);
+  assert.match(unassignedAccess.reason || '', /unassigned/);
+});
+
+test('Pending cleaner accounts are restricted from operational complaint assignment', () => {
+  const pendingCleaner = {
+    id: 'cleaner-pending',
+    role: 'cleaner' as const,
+    accountStatus: 'pending' as const,
+    approvedLocalityIds: ['loc-1'],
+  };
+
+  // Assignment check must fail for pending cleaner even if locality matches
+  const check = validateCleanerAssignment(pendingCleaner, 'loc-1');
+  assert.equal(check.eligible, false);
+  assert.match(check.reason || '', /active/);
+});
+
+test('Role security boundaries enforce that non-administrators cannot perform privileged admin actions', () => {
+  assert.equal(isAdministrator('resident'), false);
+  assert.equal(isAdministrator('cleaner'), false);
+  assert.equal(isAdministrator('supervisor'), false);
+  assert.equal(isAdministrator('administrator'), true);
+  assert.equal(isAdministrator('admin'), true);
+
+  assert.equal(isSupervisorOrAdmin('resident'), false);
+  assert.equal(isSupervisorOrAdmin('cleaner'), false);
+  assert.equal(isSupervisorOrAdmin('supervisor'), true);
+  assert.equal(isSupervisorOrAdmin('administrator'), true);
+  assert.equal(isSupervisorOrAdmin('admin'), true);
+});
+
 
 

@@ -206,6 +206,55 @@ export const CleanerView: React.FC<CleanerViewProps> = ({
 
   return (
     <div className="space-y-6">
+      {/* Cleaner Dashboard Summary Cards */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+        <div className="p-4 bg-white rounded-2xl border border-slate-200 shadow-xs space-y-1">
+          <span className="text-[10px] uppercase tracking-wider font-bold text-slate-400">Total Assigned</span>
+          <p className="text-2xl font-black text-slate-900">{myAssignedTasks.length}</p>
+          <span className="text-[11px] text-slate-500">Pickup requests</span>
+        </div>
+        <div className="p-4 bg-white rounded-2xl border border-slate-200 shadow-xs space-y-1">
+          <span className="text-[10px] uppercase tracking-wider font-bold text-blue-600">Pending Start</span>
+          <p className="text-2xl font-black text-blue-800">
+            {myAssignedTasks.filter((t) => t.status === 'assigned').length}
+          </p>
+          <span className="text-[11px] text-slate-500">Ready to dispatch</span>
+        </div>
+        <div className="p-4 bg-white rounded-2xl border border-slate-200 shadow-xs space-y-1">
+          <span className="text-[10px] uppercase tracking-wider font-bold text-purple-600">In Progress</span>
+          <p className="text-2xl font-black text-purple-800">
+            {myAssignedTasks.filter((t) => t.status === 'in_progress').length}
+          </p>
+          <span className="text-[11px] text-slate-500">Active on-site</span>
+        </div>
+        <div className="p-4 bg-white rounded-2xl border border-slate-200 shadow-xs space-y-1">
+          <span className="text-[10px] uppercase tracking-wider font-bold text-emerald-600">Completed</span>
+          <p className="text-2xl font-black text-emerald-800">
+            {myAssignedTasks.filter((t) => t.status === 'completed' || t.status === 'awaiting_verification').length}
+          </p>
+          <span className="text-[11px] text-slate-500">Resolved / Review</span>
+        </div>
+        <div className="p-4 bg-white rounded-2xl border border-slate-200 shadow-xs space-y-1 col-span-2 sm:col-span-1">
+          <span className="text-[10px] uppercase tracking-wider font-bold text-slate-400">Assigned Supervisor</span>
+          <div className="flex items-center gap-1.5 mt-1">
+            <ShieldCheck className="w-4 h-4 text-blue-600 shrink-0" />
+            <p className="text-xs font-bold text-slate-900 truncate">
+              {currentUser.supervisorName || 'Not Assigned'}
+            </p>
+          </div>
+          <span className="text-[11px] text-slate-500">Field Supervisor</span>
+        </div>
+        <div className="p-4 bg-white rounded-2xl border border-slate-200 shadow-xs space-y-1 col-span-2 sm:col-span-1">
+          <span className="text-[10px] uppercase tracking-wider font-bold text-slate-400">Authorized Localities</span>
+          <p className="text-2xl font-black text-emerald-700">{approvedAreas.length}</p>
+          <span className="text-[11px] text-slate-500 truncate block">
+            {approvedAreas.length > 0
+              ? approvedAreas.map((a) => a.localityName).slice(0, 2).join(', ') + (approvedAreas.length > 2 ? '...' : '')
+              : 'None'}
+          </span>
+        </div>
+      </div>
+
       {/* Navigation Tabs */}
       <div className="flex border-b border-slate-200 bg-white rounded-t-2xl px-4 pt-2 shadow-xs">
         <button
