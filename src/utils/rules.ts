@@ -3,7 +3,15 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-export type UserRole = 'resident' | 'cleaner' | 'supervisor' | 'admin';
+export type UserRole = 'resident' | 'cleaner' | 'supervisor' | 'administrator' | 'admin';
+
+export const isAdministrator = (role?: UserRole | string | null): boolean => {
+  return role === 'administrator' || role === 'admin';
+};
+
+export const isSupervisorOrAdmin = (role?: UserRole | string | null): boolean => {
+  return role === 'supervisor' || role === 'administrator' || role === 'admin';
+};
 
 export type AccountStatus = 'active' | 'pending' | 'suspended';
 
@@ -221,7 +229,7 @@ export function canTransitionStatus(
 
   // 1. submitted -> verified (Supervisor / Admin)
   if (currentStatus === 'submitted' && targetStatus === 'verified') {
-    if (callerRole !== 'supervisor' && callerRole !== 'admin') {
+    if (!isSupervisorOrAdmin(callerRole)) {
       return { allowed: false, reason: 'Only a supervisor or administrator can verify complaints.' };
     }
     return { allowed: true };
@@ -229,7 +237,7 @@ export function canTransitionStatus(
 
   // 2. submitted -> rejected (Supervisor / Admin)
   if (currentStatus === 'submitted' && targetStatus === 'rejected') {
-    if (callerRole !== 'supervisor' && callerRole !== 'admin') {
+    if (!isSupervisorOrAdmin(callerRole)) {
       return { allowed: false, reason: 'Only a supervisor or administrator can reject complaints.' };
     }
     if (!context.rejectionReason || context.rejectionReason.trim().length < 5) {
@@ -240,7 +248,7 @@ export function canTransitionStatus(
 
   // 3. verified -> assigned (Supervisor / Admin)
   if (currentStatus === 'verified' && targetStatus === 'assigned') {
-    if (callerRole !== 'supervisor' && callerRole !== 'admin') {
+    if (!isSupervisorOrAdmin(callerRole)) {
       return { allowed: false, reason: 'Only a supervisor or administrator can assign cleaners.' };
     }
     if (!context.assignedCleanerId) {
@@ -276,7 +284,7 @@ export function canTransitionStatus(
 
   // 6. awaiting_verification -> completed (Supervisor / Admin)
   if (currentStatus === 'awaiting_verification' && targetStatus === 'completed') {
-    if (callerRole !== 'supervisor' && callerRole !== 'admin') {
+    if (!isSupervisorOrAdmin(callerRole)) {
       return { allowed: false, reason: 'Only a supervisor or administrator can approve completion.' };
     }
     if (!context.hasAfterPhoto) {
@@ -287,7 +295,7 @@ export function canTransitionStatus(
 
   // 7. awaiting_verification -> in_progress (Supervisor / Admin returns inadequate evidence)
   if (currentStatus === 'awaiting_verification' && targetStatus === 'in_progress') {
-    if (callerRole !== 'supervisor' && callerRole !== 'admin') {
+    if (!isSupervisorOrAdmin(callerRole)) {
       return { allowed: false, reason: 'Only a supervisor or administrator can return tasks to in-progress.' };
     }
     if (!context.returnNote || context.returnNote.trim().length < 5) {

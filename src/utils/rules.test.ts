@@ -182,10 +182,17 @@ test('canTransitionStatus strictly enforces state machine, role authorization, a
   });
   assert.equal(supReturnNoNote.allowed, false);
 
-  // Supervisor returning with explanatory note
-  const supReturnWithNote = canTransitionStatus('awaiting_verification', 'in_progress', 'supervisor', {
-    callerId: 'sup-1',
-    returnNote: 'Waste residue remained along north curb; please clear completely and resubmit.',
+  // Administrator verifying submitted complaint
+  const adminVerify = canTransitionStatus('submitted', 'verified', 'administrator', {
+    callerId: 'admin-1',
   });
-  assert.equal(supReturnWithNote.allowed, true);
+  assert.equal(adminVerify.allowed, true);
+
+  // Administrator approving completion
+  const adminApprove = canTransitionStatus('awaiting_verification', 'completed', 'administrator', {
+    callerId: 'admin-1',
+    hasAfterPhoto: true,
+  });
+  assert.equal(adminApprove.allowed, true);
 });
+

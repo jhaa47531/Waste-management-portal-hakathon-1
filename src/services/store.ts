@@ -21,6 +21,8 @@ import {
   validateCleanerAssignment,
   canTransitionStatus,
   generateTrackingCode,
+  isAdministrator,
+  isSupervisorOrAdmin,
 } from '../utils/rules.ts';
 import { supabase, isSupabaseConfigured, COMPLAINT_STORAGE_BUCKET } from './supabase.ts';
 
@@ -263,7 +265,7 @@ class PortalStore {
       }
 
       // 3. If supervisor/admin, fetch profiles and service areas
-      if (this.state.currentUser && ['supervisor', 'admin'].includes(this.state.currentUser.role)) {
+      if (this.state.currentUser && isSupervisorOrAdmin(this.state.currentUser.role)) {
         const { data: profs } = await supabase.from('profiles').select('*');
         if (profs) {
           this.state.users = profs.map((p: any) => ({
@@ -398,6 +400,136 @@ class PortalStore {
     return { success: true, user: newUser };
   }
 
+  // --------------------------------------------------------------------------
+  // Cleaner Registration (Self-service with 3-5 preferred localities)
+  // Application starts in 'pending' status; operational work blocked until approved
+  // --------------------------------------------------------------------------
+  public async registerCleaner(params: {
+    email: string;
+    fullName: string;
+    phoneNumber: string;
+    password?: string;
+    preferredLocalityIds: string[];
+  }): Promise<{ success: boolean; user?: UserProfile; error?: string }> {
+    const cleanEmail = params.email.trim().toLowerCase();
+    const cleanName = params.fullName.trim();
+    const cleanPhone = params.phoneNumber.trim();
+
+    if (!cleanEmail || !cleanEmail.includes('@')) {
+      return { success: false, error: 'A valid email address is required.' };
+    }
+    if (cleanName.length < 2) {
+      return { success: false, error: 'Full name must be at least 2 characters.' };
+    }
+    if (cleanPhone.length < 7) {
+      return { success: false, error: 'Phone number must be at least 7 characters.' };
+    }
+    if (
+      !params.preferredLocalityIds ||
+      params.preferredLocalityIds.length < 1 ||
+      (this.state.localities.length >= 3 && params.preferredLocalityIds.length < 3) ||
+      params.preferredLocalityIds.length > 5
+    ) {
+      return {
+        success: false,
+        error: 'Please select between 3 and 5 preferred service localities.',
+      };
+    }
+
+    if (this.isLive && supabase && params.password) {
+      try {
+        const { data, error } = await supabase.auth.signUp({
+          email: cleanEmail,
+          password: params.password,
+          options: {
+            data: {
+              full_name: cleanName,
+              phone_number: cleanPhone,
+            },
+          },
+        });
+        if (error) {
+          return { success: false, error: error.message };
+        }
+        if (data.user) {
+          // Submit cleaner application row
+          await supabase.from('cleaner_applications').insert({
+            cleaner_id: data.user.id,
+            status: 'pending',
+          });
+
+          // Propose preferred service areas (unapproved)
+          for (const locId of params.preferredLocalityIds) {
+            await supabase.from('cleaner_service_areas').insert({
+              cleaner_id: data.user.id,
+              locality_id: locId,
+              is_approved: false,
+            });
+          }
+
+          const user: UserProfile = {
+            id: data.user.id,
+            email: cleanEmail,
+            fullName: cleanName,
+            phoneNumber: cleanPhone,
+            role: 'cleaner',
+            accountStatus: 'pending',
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+          };
+          this.state.currentUser = user;
+          this.notify();
+          return { success: true, user };
+        }
+      } catch (err: any) {
+        return { success: false, error: err.message || 'Cleaner registration failed.' };
+      }
+    }
+
+    // Local / In-memory Persistence
+    if (this.state.users.some((u) => u.email.toLowerCase() === cleanEmail)) {
+      return { success: false, error: 'An account with this email address already exists.' };
+    }
+
+    const newCleanerId = `usr-cleaner-${Date.now()}`;
+    const newCleaner: UserProfile = {
+      id: newCleanerId,
+      email: cleanEmail,
+      fullName: cleanName,
+      phoneNumber: cleanPhone,
+      role: 'cleaner',
+      accountStatus: 'pending', // Pending approval by supervisor
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+
+    const newApp: CleanerApplication = {
+      id: `app-${Date.now()}`,
+      cleanerId: newCleanerId,
+      cleanerName: cleanName,
+      cleanerEmail: cleanEmail,
+      status: 'pending',
+      createdAt: new Date().toISOString(),
+    };
+
+    for (const locId of params.preferredLocalityIds) {
+      const loc = this.state.localities.find((l) => l.id === locId);
+      this.state.serviceAreas.push({
+        id: `sa-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+        cleanerId: newCleanerId,
+        localityId: locId,
+        localityName: loc ? loc.name : 'Locality',
+        isApproved: false, // Must be approved by supervisor
+      });
+    }
+
+    this.state.cleanerApplications.push(newApp);
+    this.state.users.push(newCleaner);
+    this.state.currentUser = newCleaner;
+    this.notify();
+    return { success: true, user: newCleaner };
+  }
+
   public async loginWithEmail(
     email: string,
     password?: string
@@ -424,12 +556,33 @@ class PortalStore {
       }
     }
 
-    // Local / Clean State Login
-    const user = this.state.users.find((u) => u.email.toLowerCase() === cleanEmail);
+    // Local / In-memory Login
+    let user = this.state.users.find((u) => u.email.toLowerCase() === cleanEmail);
+
+    // Initial authorized Administrator provisioning (jhaa47531@gmail.com)
+    if (cleanEmail === 'jhaa47531@gmail.com') {
+      if (!user) {
+        user = {
+          id: 'usr-admin-initial',
+          email: 'jhaa47531@gmail.com',
+          fullName: 'Municipal Administrator',
+          phoneNumber: '+1-555-0100',
+          role: 'administrator',
+          accountStatus: 'active',
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        };
+        this.state.users.push(user);
+      } else {
+        user.role = 'administrator';
+        user.accountStatus = 'active';
+      }
+    }
+
     if (!user) {
       return {
         success: false,
-        error: 'No account found with this email. Please register as a new resident or contact an administrator.',
+        error: 'No account found with this email. Please register as a resident/cleaner or contact the administrator.',
       };
     }
     this.state.currentUser = user;
@@ -1129,7 +1282,7 @@ class PortalStore {
     phoneNumber: string;
   }): Promise<{ success: boolean; user?: UserProfile; error?: string }> {
     const user = this.state.currentUser;
-    if (user?.role !== 'admin') {
+    if (!isAdministrator(user?.role)) {
       return { success: false, error: 'Access denied: Only administrators can provision supervisor accounts.' };
     }
 
@@ -1205,8 +1358,8 @@ class PortalStore {
     notes?: string
   ): Promise<{ success: boolean; error?: string }> {
     const user = this.state.currentUser;
-    if (user?.role !== 'admin' && user?.role !== 'supervisor') {
-      return { success: false, error: 'Access denied: Only staff can review cleaner applications.' };
+    if (!user || !isSupervisorOrAdmin(user.role)) {
+      return { success: false, error: 'Access denied: Only authorized staff can review cleaner applications.' };
     }
 
     if (this.isLive && supabase) {
@@ -1259,7 +1412,7 @@ class PortalStore {
 
   public async toggleCleanerLocalityApproval(cleanerId: string, localityId: string, approved: boolean): Promise<void> {
     const user = this.state.currentUser;
-    if (user?.role !== 'admin' && user?.role !== 'supervisor') return;
+    if (!user || !isSupervisorOrAdmin(user.role)) return;
 
     if (this.isLive && supabase) {
       try {
@@ -1322,7 +1475,7 @@ class PortalStore {
     if (email.trim().toLowerCase() === 'jhaa47531@gmail.com') {
       const user = this.state.users.find((u) => u.email.toLowerCase() === 'jhaa47531@gmail.com');
       if (user) {
-        user.role = 'admin';
+        user.role = 'administrator';
         user.accountStatus = 'active';
         user.updatedAt = new Date().toISOString();
         if (this.state.currentUser?.email.toLowerCase() === 'jhaa47531@gmail.com') {

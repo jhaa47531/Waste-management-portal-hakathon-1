@@ -26,11 +26,18 @@ export function getSupabaseConfigStatus(): SupabaseConfigStatus {
   let isValidUrl = false;
   let errorMessage: string | undefined;
 
+  const isPlaceholderUrl = rawUrl.includes('your-project') || rawUrl.includes('<') || rawUrl.includes('example.com');
+  const isPlaceholderKey = rawKey.startsWith('your-anon-') || rawKey.includes('placeholder') || rawKey.length < 35;
+
   if (hasUrl) {
     try {
       const parsed = new URL(rawUrl);
       if (parsed.protocol === 'http:' || parsed.protocol === 'https:') {
-        isValidUrl = true;
+        if (isPlaceholderUrl) {
+          errorMessage = 'VITE_SUPABASE_URL contains placeholder "your-project.supabase.co". A real Supabase project URL is required.';
+        } else {
+          isValidUrl = true;
+        }
       } else {
         errorMessage = `VITE_SUPABASE_URL must start with http:// or https:// (received protocol "${parsed.protocol}")`;
       }
@@ -43,16 +50,18 @@ export function getSupabaseConfigStatus(): SupabaseConfigStatus {
 
   if (!hasKey && !errorMessage) {
     errorMessage = 'VITE_SUPABASE_ANON_KEY is missing in environment.';
+  } else if (hasKey && isPlaceholderKey && !errorMessage) {
+    errorMessage = 'VITE_SUPABASE_ANON_KEY is set to a placeholder. A genuine Supabase anon/public JWT key is required.';
   }
 
-  const isConfigured = hasUrl && hasKey && isValidUrl;
+  const isConfigured = hasUrl && hasKey && isValidUrl && !isPlaceholderUrl && !isPlaceholderKey;
 
   return {
     isConfigured,
-    hasUrl,
-    hasKey,
+    hasUrl: hasUrl && !isPlaceholderUrl,
+    hasKey: hasKey && !isPlaceholderKey,
     isValidUrl,
-    urlDisplay: isValidUrl ? rawUrl : (hasUrl ? `${rawUrl.slice(0, 15)}... (malformed URL)` : 'Not configured'),
+    urlDisplay: isValidUrl && !isPlaceholderUrl ? rawUrl : (hasUrl ? `${rawUrl.slice(0, 30)} (placeholder)` : 'Not configured'),
     errorMessage: isConfigured ? undefined : errorMessage,
   };
 }

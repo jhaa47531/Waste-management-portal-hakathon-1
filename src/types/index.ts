@@ -3,9 +3,18 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { UserRole, AccountStatus, ComplaintStatus, UrgencyLevel, WasteType } from '../utils/rules.ts';
+import {
+  UserRole,
+  AccountStatus,
+  ComplaintStatus,
+  UrgencyLevel,
+  WasteType,
+  isAdministrator,
+  isSupervisorOrAdmin,
+} from '../utils/rules.ts';
 
 export type { UserRole, AccountStatus, ComplaintStatus, UrgencyLevel, WasteType };
+export { isAdministrator, isSupervisorOrAdmin };
 
 export interface UserProfile {
   id: string;
