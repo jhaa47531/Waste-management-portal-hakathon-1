@@ -26,6 +26,10 @@ import {
   Phone,
   FileText,
   Inbox,
+  CheckCircle2,
+  Sparkles,
+  ArrowRight,
+  ShieldCheck,
 } from 'lucide-react';
 
 interface ResidentViewProps {
@@ -79,14 +83,22 @@ export const ResidentView: React.FC<ResidentViewProps> = ({
   const [selectedComplaint, setSelectedComplaint] = useState<Complaint | null>(null);
 
   // Filter complaints: Resident can view ONLY their own complaints
-  const residentComplaints = complaints.filter(
+  const allMyComplaints = complaints.filter((c) => c.residentId === currentUser.id);
+
+  const residentComplaints = allMyComplaints.filter(
     (c) =>
-      c.residentId === currentUser.id &&
       (statusFilter === 'all' || c.status === statusFilter) &&
       (searchTracking.trim() === '' ||
         c.trackingCode.toLowerCase().includes(searchTracking.trim().toLowerCase()) ||
-        c.address.toLowerCase().includes(searchTracking.trim().toLowerCase()))
+        c.address.toLowerCase().includes(searchTracking.trim().toLowerCase()) ||
+        c.localityName.toLowerCase().includes(searchTracking.trim().toLowerCase()))
   );
+
+  const totalSubmitted = allMyComplaints.length;
+  const inProgressCount = allMyComplaints.filter(
+    (c) => c.status === 'in_progress' || c.status === 'assigned' || c.status === 'awaiting_verification'
+  ).length;
+  const completedCount = allMyComplaints.filter((c) => c.status === 'completed').length;
 
   // --------------------------------------------------------------------------
   // Mandatory Geolocation Capture
@@ -248,48 +260,93 @@ export const ResidentView: React.FC<ResidentViewProps> = ({
 
   return (
     <div className="space-y-6">
+      {/* Metrics Strip */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+        <div className="bg-white dark:bg-slate-900 rounded-2xl p-4 border border-slate-200/80 dark:border-slate-800 shadow-2xs flex items-center justify-between">
+          <div>
+            <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">
+              Total Reports Filed
+            </span>
+            <p className="text-2xl font-black font-mono tabular-nums text-slate-900 dark:text-white mt-0.5">
+              {totalSubmitted}
+            </p>
+          </div>
+          <div className="w-10 h-10 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 flex items-center justify-center">
+            <Camera className="w-5 h-5" />
+          </div>
+        </div>
+
+        <div className="bg-white dark:bg-slate-900 rounded-2xl p-4 border border-slate-200/80 dark:border-slate-800 shadow-2xs flex items-center justify-between">
+          <div>
+            <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">
+              Active / In Progress
+            </span>
+            <p className="text-2xl font-black font-mono tabular-nums text-purple-600 dark:text-purple-400 mt-0.5">
+              {inProgressCount}
+            </p>
+          </div>
+          <div className="w-10 h-10 rounded-xl bg-purple-50 dark:bg-purple-950/60 text-purple-700 dark:text-purple-300 flex items-center justify-center">
+            <Clock className="w-5 h-5" />
+          </div>
+        </div>
+
+        <div className="bg-white dark:bg-slate-900 rounded-2xl p-4 border border-slate-200/80 dark:border-slate-800 shadow-2xs flex items-center justify-between">
+          <div>
+            <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">
+              Resolved & Audited
+            </span>
+            <p className="text-2xl font-black font-mono tabular-nums text-emerald-600 dark:text-emerald-400 mt-0.5">
+              {completedCount}
+            </p>
+          </div>
+          <div className="w-10 h-10 rounded-xl bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 flex items-center justify-center">
+            <CheckCircle2 className="w-5 h-5" />
+          </div>
+        </div>
+      </div>
+
       {/* Tab Switcher */}
-      <div className="flex border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 rounded-t-xl px-4 pt-2">
+      <div className="flex border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 rounded-2xl px-4 pt-2 shadow-2xs">
         <button
           onClick={() => setActiveTab('submit')}
           className={`py-3 px-5 text-sm font-bold border-b-2 transition-all flex items-center gap-2 cursor-pointer ${
             activeTab === 'submit'
               ? 'border-emerald-600 text-emerald-600 dark:text-emerald-400'
-              : 'border-transparent text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
+              : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'
           }`}
         >
-          <Camera className="w-4 h-4" /> Report Waste Pickup
+          <Camera className="w-4 h-4" />
+          <span>Report Waste Pickup</span>
         </button>
         <button
           onClick={() => setActiveTab('history')}
           className={`py-3 px-5 text-sm font-bold border-b-2 transition-all flex items-center gap-2 cursor-pointer ${
             activeTab === 'history'
               ? 'border-emerald-600 text-emerald-600 dark:text-emerald-400'
-              : 'border-transparent text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
+              : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'
           }`}
         >
-          <Clock className="w-4 h-4" /> My Complaints & Tracking ({residentComplaints.length})
+          <Clock className="w-4 h-4" />
+          <span>My Complaints & Tracking ({allMyComplaints.length})</span>
         </button>
       </div>
 
-      {/* ---------------------------------------------------------------------- */}
       {/* TAB 1: SUBMIT COMPLAINT FORM */}
-      {/* ---------------------------------------------------------------------- */}
       {activeTab === 'submit' && (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          <div className="lg:col-span-2 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6 shadow-xs">
-            <div className="mb-6">
-              <h2 className="text-xl font-bold text-slate-900 dark:text-white">
+          <div className="lg:col-span-2 bg-white dark:bg-slate-900 rounded-3xl border border-slate-200/80 dark:border-slate-800 p-6 sm:p-8 shadow-sm space-y-6">
+            <div>
+              <h2 className="text-xl font-black text-slate-900 dark:text-white tracking-tight">
                 Submit Immediate Waste Pickup Request
               </h2>
-              <p className="text-xs text-slate-500 mt-1">
+              <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
                 Report visible municipal waste with verified GPS and photographic evidence for prompt inspection.
               </p>
             </div>
 
             {formErrors.submit && (
-              <div className="mb-6 p-4 rounded-xl bg-rose-50 dark:bg-rose-950/40 border border-rose-300 dark:border-rose-800 text-rose-800 dark:text-rose-200 text-xs flex items-center gap-2">
-                <AlertCircle className="w-4 h-4 shrink-0" />
+              <div className="p-4 rounded-2xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800 text-rose-800 dark:text-rose-200 text-xs flex items-center gap-2.5">
+                <AlertCircle className="w-4 h-4 shrink-0 text-rose-600 dark:text-rose-400" />
                 <span>{formErrors.submit}</span>
               </div>
             )}
@@ -298,7 +355,7 @@ export const ResidentView: React.FC<ResidentViewProps> = ({
               {/* Resident Contact Info */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
+                  <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5">
                     Full Name <span className="text-rose-500">*</span>
                   </label>
                   <input
@@ -307,15 +364,15 @@ export const ResidentView: React.FC<ResidentViewProps> = ({
                     value={fullName}
                     onChange={(e) => setFullName(e.target.value)}
                     placeholder="Enter your full name"
-                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-sm focus:ring-2 focus:ring-emerald-500 focus:outline-hidden"
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 text-xs focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 focus:outline-hidden transition-colors"
                   />
                   {formErrors.fullName && (
-                    <p className="text-xs text-rose-600 mt-1">{formErrors.fullName}</p>
+                    <p className="text-xs text-rose-600 dark:text-rose-400 mt-1">{formErrors.fullName}</p>
                   )}
                 </div>
 
                 <div>
-                  <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
+                  <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5">
                     Phone Number (for Supervisor Confirmation) <span className="text-rose-500">*</span>
                   </label>
                   <input
@@ -324,10 +381,10 @@ export const ResidentView: React.FC<ResidentViewProps> = ({
                     value={phoneNumber}
                     onChange={(e) => setPhoneNumber(e.target.value)}
                     placeholder="e.g. +1-555-0100"
-                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-sm focus:ring-2 focus:ring-emerald-500 focus:outline-hidden"
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 text-xs focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 focus:outline-hidden transition-colors"
                   />
                   {formErrors.phoneNumber && (
-                    <p className="text-xs text-rose-600 mt-1">{formErrors.phoneNumber}</p>
+                    <p className="text-xs text-rose-600 dark:text-rose-400 mt-1">{formErrors.phoneNumber}</p>
                   )}
                 </div>
               </div>
@@ -335,13 +392,13 @@ export const ResidentView: React.FC<ResidentViewProps> = ({
               {/* Address & Locality Dropdown */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
+                  <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5">
                     Locality / Ward <span className="text-rose-500">*</span>
                   </label>
                   <select
                     value={localityId}
                     onChange={(e) => setLocalityId(e.target.value)}
-                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-sm focus:ring-2 focus:ring-emerald-500 focus:outline-hidden"
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 text-xs focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 focus:outline-hidden transition-colors cursor-pointer"
                   >
                     {localities.map((loc) => (
                       <option key={loc.id} value={loc.id}>
@@ -350,18 +407,18 @@ export const ResidentView: React.FC<ResidentViewProps> = ({
                     ))}
                   </select>
                   {formErrors.localityId && (
-                    <p className="text-xs text-rose-600 mt-1">{formErrors.localityId}</p>
+                    <p className="text-xs text-rose-600 dark:text-rose-400 mt-1">{formErrors.localityId}</p>
                   )}
                 </div>
 
                 <div>
-                  <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
+                  <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5">
                     Waste Type <span className="text-rose-500">*</span>
                   </label>
                   <select
                     value={wasteType}
                     onChange={(e) => setWasteType(e.target.value as WasteType)}
-                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-sm focus:ring-2 focus:ring-emerald-500 focus:outline-hidden capitalize"
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 text-xs focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 focus:outline-hidden transition-colors capitalize cursor-pointer"
                   >
                     {ALLOWED_WASTE_TYPES.map((t) => (
                       <option key={t} value={t}>
@@ -374,7 +431,7 @@ export const ResidentView: React.FC<ResidentViewProps> = ({
 
               {/* Detailed Street Address */}
               <div>
-                <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
+                <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5">
                   Street Address & Landmark <span className="text-rose-500">*</span>
                 </label>
                 <input
@@ -383,22 +440,23 @@ export const ResidentView: React.FC<ResidentViewProps> = ({
                   value={address}
                   onChange={(e) => setAddress(e.target.value)}
                   placeholder="Street name, landmark, building number or nearby public spot"
-                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-sm focus:ring-2 focus:ring-emerald-500 focus:outline-hidden"
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 text-xs focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 focus:outline-hidden transition-colors"
                 />
                 {formErrors.address && (
-                  <p className="text-xs text-rose-600 mt-1">{formErrors.address}</p>
+                  <p className="text-xs text-rose-600 dark:text-rose-400 mt-1">{formErrors.address}</p>
                 )}
               </div>
 
               {/* Mandatory GPS Geolocation Capture */}
-              <div className="p-4 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50 space-y-3">
-                <div className="flex items-center justify-between">
+              <div className="p-4 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50/80 dark:bg-slate-800/40 space-y-3">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                   <div>
-                    <h3 className="text-xs font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
-                      <MapPin className="w-4 h-4 text-emerald-600" /> Mandatory GPS Geolocation
+                    <h3 className="text-xs font-bold text-slate-900 dark:text-white flex items-center gap-1.5">
+                      <MapPin className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+                      <span>Mandatory GPS Geolocation</span>
                       <span className="text-rose-500">*</span>
                     </h3>
-                    <p className="text-[11px] text-slate-500 mt-0.5">
+                    <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
                       Coordinates are captured directly from browser geolocation. Coordinates are never fabricated or guessed.
                     </p>
                   </div>
@@ -407,18 +465,18 @@ export const ResidentView: React.FC<ResidentViewProps> = ({
                     type="button"
                     onClick={captureGpsLocation}
                     disabled={gpsLoading}
-                    className="px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white text-xs font-semibold flex items-center gap-1.5 shadow-xs transition-colors shrink-0 cursor-pointer"
+                    className="px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white text-xs font-semibold flex items-center justify-center gap-1.5 shadow-xs transition-colors shrink-0 cursor-pointer"
                   >
                     <RefreshCw className={`w-3.5 h-3.5 ${gpsLoading ? 'animate-spin' : ''}`} />
-                    {gpsLoading ? 'Detecting GPS...' : latitude ? 'Update GPS' : 'Detect Current GPS'}
+                    <span>{gpsLoading ? 'Detecting GPS...' : latitude ? 'Update GPS' : 'Detect Current GPS'}</span>
                   </button>
                 </div>
 
                 {latitude !== null && longitude !== null ? (
-                  <div className="p-3 rounded-lg bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-300 dark:border-emerald-800 flex items-center justify-between text-xs">
+                  <div className="p-3 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800/80 flex flex-wrap items-center justify-between gap-2 text-xs">
                     <div className="flex items-center gap-2 text-emerald-800 dark:text-emerald-200">
-                      <CheckCircle className="w-4 h-4 text-emerald-600 shrink-0" />
-                      <span>
+                      <CheckCircle className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                      <span className="font-mono tabular-nums">
                         Verified coordinates: <strong>{latitude.toFixed(6)}° N</strong>,{' '}
                         <strong>{longitude.toFixed(6)}° E</strong>{' '}
                         {gpsAccuracy ? `(±${gpsAccuracy}m)` : ''}
@@ -428,7 +486,7 @@ export const ResidentView: React.FC<ResidentViewProps> = ({
                       href={`https://www.google.com/maps?q=${latitude},${longitude}`}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="text-emerald-700 dark:text-emerald-400 font-semibold hover:underline flex items-center gap-1 shrink-0"
+                      className="text-emerald-700 dark:text-emerald-300 font-semibold hover:underline flex items-center gap-1 shrink-0"
                     >
                       View on Map <ExternalLink className="w-3 h-3" />
                     </a>
@@ -436,7 +494,7 @@ export const ResidentView: React.FC<ResidentViewProps> = ({
                 ) : null}
 
                 {gpsError && (
-                  <div className="p-3 rounded-lg bg-rose-50 dark:bg-rose-950/40 border border-rose-300 dark:border-rose-800 text-rose-800 dark:text-rose-200 text-xs flex items-start gap-2">
+                  <div className="p-3 rounded-xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800/80 text-rose-800 dark:text-rose-200 text-xs flex items-start gap-2">
                     <AlertCircle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
                     <div className="space-y-1">
                       <p className="font-semibold">GPS Capture Denied or Unavailable</p>
@@ -453,26 +511,26 @@ export const ResidentView: React.FC<ResidentViewProps> = ({
                 )}
 
                 {formErrors.gps && !gpsError && (
-                  <p className="text-xs text-rose-600 font-medium">{formErrors.gps}</p>
+                  <p className="text-xs text-rose-600 dark:text-rose-400 font-medium">{formErrors.gps}</p>
                 )}
               </div>
 
               {/* Photographic Evidence Upload (Max 3MB, JPG/PNG) */}
               <div>
-                <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
+                <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5">
                   Photographic Evidence (One photo, JPG/JPEG/PNG, Max 3 MB){' '}
                   <span className="text-rose-500">*</span>
                 </label>
 
                 {!photoPreview ? (
                   <label className="border-2 border-dashed border-slate-300 dark:border-slate-700 hover:border-emerald-500 dark:hover:border-emerald-500 rounded-2xl p-6 flex flex-col items-center justify-center cursor-pointer transition-colors bg-slate-50/50 dark:bg-slate-800/30">
-                    <div className="w-12 h-12 rounded-full bg-emerald-50 dark:bg-emerald-950/50 text-emerald-600 flex items-center justify-center mb-2">
+                    <div className="w-12 h-12 rounded-2xl bg-emerald-50 dark:bg-emerald-950/50 text-emerald-600 dark:text-emerald-400 flex items-center justify-center mb-2.5 shadow-2xs">
                       <Upload className="w-6 h-6" />
                     </div>
-                    <span className="text-xs font-semibold text-slate-700 dark:text-slate-300">
+                    <span className="text-xs font-bold text-slate-800 dark:text-slate-200">
                       Click to browse or take photo from device
                     </span>
-                    <span className="text-[11px] text-slate-400 mt-1">
+                    <span className="text-[11px] text-slate-400 dark:text-slate-500 mt-1">
                       JPG, JPEG, PNG format up to 3 MB
                     </span>
                     <input
@@ -483,7 +541,7 @@ export const ResidentView: React.FC<ResidentViewProps> = ({
                     />
                   </label>
                 ) : (
-                  <div className="relative rounded-2xl overflow-hidden border border-slate-200 dark:border-slate-700 group bg-slate-900 max-w-md">
+                  <div className="relative rounded-2xl overflow-hidden border border-slate-200 dark:border-slate-700 group bg-slate-900 max-w-md shadow-sm">
                     <img
                       src={photoPreview}
                       alt="Complaint preview"
@@ -496,16 +554,16 @@ export const ResidentView: React.FC<ResidentViewProps> = ({
                           setPhotoPreview(null);
                           setPhotoFileMeta(null);
                         }}
-                        className="p-2 bg-rose-600 text-white rounded-full hover:bg-rose-700 cursor-pointer"
+                        className="p-2 bg-rose-600 text-white rounded-full hover:bg-rose-700 cursor-pointer shadow-md"
                         title="Remove photo"
                         aria-label="Remove photo"
                       >
                         <X className="w-4 h-4" />
                       </button>
                     </div>
-                    <div className="p-2 bg-slate-900/90 text-white text-[11px] flex justify-between items-center">
+                    <div className="p-2.5 bg-slate-900/95 text-white text-[11px] flex justify-between items-center">
                       <span className="truncate max-w-[200px]">{photoFileMeta?.name}</span>
-                      <span>
+                      <span className="font-mono tabular-nums text-slate-300">
                         {photoFileMeta
                           ? `${(photoFileMeta.sizeBytes / 1024).toFixed(0)} KB`
                           : ''}
@@ -514,15 +572,15 @@ export const ResidentView: React.FC<ResidentViewProps> = ({
                   </div>
                 )}
 
-                {photoError && <p className="text-xs text-rose-600 mt-1 font-medium">{photoError}</p>}
+                {photoError && <p className="text-xs text-rose-600 dark:text-rose-400 mt-1 font-medium">{photoError}</p>}
                 {formErrors.photo && (
-                  <p className="text-xs text-rose-600 mt-1 font-medium">{formErrors.photo}</p>
+                  <p className="text-xs text-rose-600 dark:text-rose-400 mt-1 font-medium">{formErrors.photo}</p>
                 )}
               </div>
 
               {/* Optional Remark */}
               <div>
-                <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
+                <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5">
                   Additional Remarks or Landmark Context (Optional)
                 </label>
                 <textarea
@@ -530,7 +588,7 @@ export const ResidentView: React.FC<ResidentViewProps> = ({
                   value={remark}
                   onChange={(e) => setRemark(e.target.value)}
                   placeholder="Additional context or directions for the cleaner"
-                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-sm focus:ring-2 focus:ring-emerald-500 focus:outline-hidden"
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 text-xs focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 focus:outline-hidden transition-colors"
                 />
               </div>
 
@@ -538,34 +596,45 @@ export const ResidentView: React.FC<ResidentViewProps> = ({
               <button
                 type="submit"
                 disabled={isSubmitting}
-                className="w-full py-3.5 px-6 rounded-xl bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white font-bold text-sm shadow-md shadow-emerald-600/20 flex items-center justify-center gap-2 transition-all cursor-pointer"
+                className="w-full py-3.5 px-6 rounded-2xl bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white font-bold text-sm shadow-md shadow-emerald-600/20 flex items-center justify-center gap-2 transition-all cursor-pointer"
               >
                 {isSubmitting ? (
                   <>
-                    <RefreshCw className="w-4 h-4 animate-spin" /> Submitting Request & Uploading Photo...
+                    <RefreshCw className="w-4 h-4 animate-spin" />
+                    <span>Submitting Request & Uploading Photo...</span>
                   </>
                 ) : (
                   <>
-                    <Camera className="w-4 h-4" /> Submit Waste Pickup Request
+                    <Camera className="w-4 h-4" />
+                    <span>Submit Waste Pickup Request</span>
                   </>
                 )}
               </button>
             </form>
           </div>
 
-          {/* Sidebar / Instructions */}
-          <div className="space-y-5">
-            <div className="bg-slate-50 dark:bg-slate-900/80 rounded-2xl border border-slate-200 dark:border-slate-800 p-5 text-xs space-y-3">
-              <h3 className="font-bold text-slate-900 dark:text-white flex items-center gap-1.5">
-                <FileText className="w-4 h-4 text-emerald-600" /> Municipal Pickup Policy
+          {/* Sidebar / Policy Info */}
+          <div className="space-y-4">
+            <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200/80 dark:border-slate-800 p-6 text-xs space-y-4 shadow-sm">
+              <h3 className="font-bold text-slate-900 dark:text-white flex items-center gap-2 text-sm">
+                <FileText className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+                <span>Municipal Pickup Policy</span>
               </h3>
               <p className="text-slate-600 dark:text-slate-300 leading-relaxed">
                 This portal is for reporting visible municipal waste requiring immediate pickup. Once submitted, your request is reviewed by the area Supervisor who will call your phone number to confirm before dispatching an approved cleaner.
               </p>
-              <div className="p-3 rounded-xl bg-blue-50 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-800 text-blue-900 dark:text-blue-200 space-y-1">
-                <p className="font-semibold">Mandatory Photo & GPS</p>
-                <p className="text-[11px]">
-                  Submissions require both genuine GPS coordinates and an initial evidence photo. Cleaners must also submit an after-cleaning photo before completion is approved.
+
+              <div className="p-3.5 rounded-2xl bg-blue-50 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-800/80 text-blue-900 dark:text-blue-300 space-y-1 shadow-2xs">
+                <p className="font-bold">Dual Evidence Standard</p>
+                <p className="text-[11px] leading-relaxed">
+                  Submissions require genuine GPS coordinates and an initial evidence photo. Cleaners must also submit an after-cleaning photo before completion is approved.
+                </p>
+              </div>
+
+              <div className="p-3.5 rounded-2xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800/80 text-emerald-900 dark:text-emerald-300 space-y-1 shadow-2xs">
+                <p className="font-bold">Automated Tracking ID</p>
+                <p className="text-[11px] leading-relaxed">
+                  Every submission generates an auditable tracking code (e.g., <code className="font-mono font-semibold">WPR-260322-XXXX</code>) that updates live throughout verification, assignment, and completion.
                 </p>
               </div>
             </div>
@@ -573,21 +642,19 @@ export const ResidentView: React.FC<ResidentViewProps> = ({
         </div>
       )}
 
-      {/* ---------------------------------------------------------------------- */}
       {/* TAB 2: RESIDENT'S OWN COMPLAINTS & TRACKING */}
-      {/* ---------------------------------------------------------------------- */}
       {activeTab === 'history' && (
         <div className="space-y-4">
           {/* Search & Filter Bar */}
-          <div className="bg-white dark:bg-slate-900 p-4 rounded-xl border border-slate-200 dark:border-slate-800 flex flex-wrap items-center justify-between gap-3">
+          <div className="bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-200/80 dark:border-slate-800 flex flex-wrap items-center justify-between gap-3 shadow-2xs">
             <div className="relative flex-1 min-w-[240px]">
-              <Search className="w-4 h-4 text-slate-400 absolute left-3 top-3" />
+              <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-3" />
               <input
                 type="text"
                 value={searchTracking}
                 onChange={(e) => setSearchTracking(e.target.value)}
-                placeholder="Search by Tracking ID (e.g. WPR-...) or Address..."
-                className="w-full pl-9 pr-4 py-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs focus:ring-2 focus:ring-emerald-500 focus:outline-hidden"
+                placeholder="Search by Tracking ID (e.g. WPR-...), Address, or Locality..."
+                className="w-full pl-10 pr-4 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 text-xs focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 focus:outline-hidden transition-colors"
               />
             </div>
 
@@ -596,7 +663,7 @@ export const ResidentView: React.FC<ResidentViewProps> = ({
               <select
                 value={statusFilter}
                 onChange={(e) => setStatusFilter(e.target.value)}
-                className="px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs"
+                className="px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-slate-100 text-xs cursor-pointer focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 focus:outline-hidden transition-colors"
               >
                 <option value="all">All Statuses</option>
                 <option value="submitted">Submitted</option>
@@ -612,20 +679,26 @@ export const ResidentView: React.FC<ResidentViewProps> = ({
 
           {/* Genuine Clean Empty State */}
           {residentComplaints.length === 0 ? (
-            <div className="p-12 text-center bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800">
-              <Inbox className="w-12 h-12 text-slate-300 mx-auto mb-3" />
-              <h3 className="text-base font-bold text-slate-700 dark:text-slate-300">
-                No complaints yet.
+            <div className="p-12 text-center bg-white dark:bg-slate-900 rounded-3xl border border-slate-200/80 dark:border-slate-800 shadow-sm space-y-3">
+              <div className="w-14 h-14 rounded-2xl bg-slate-100 dark:bg-slate-800 text-slate-400 flex items-center justify-center mx-auto">
+                <Inbox className="w-7 h-7" />
+              </div>
+              <h3 className="text-base font-bold text-slate-800 dark:text-slate-200">
+                No complaints found
               </h3>
-              <p className="text-xs text-slate-400 mt-1 max-w-sm mx-auto">
-                You haven't submitted any waste pickup requests yet. Use the "Report Waste Pickup" tab above to file your first request.
+              <p className="text-xs text-slate-500 dark:text-slate-400 max-w-sm mx-auto leading-relaxed">
+                {allMyComplaints.length === 0
+                  ? "You haven't submitted any waste pickup requests yet. Use the 'Report Waste Pickup' tab above to file your first request."
+                  : 'No complaints match your current search or filter criteria. Try clearing the filter.'}
               </p>
-              <button
-                onClick={() => setActiveTab('submit')}
-                className="mt-4 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-semibold cursor-pointer"
-              >
-                Report Waste Pickup
-              </button>
+              {allMyComplaints.length === 0 && (
+                <button
+                  onClick={() => setActiveTab('submit')}
+                  className="mt-2 px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-semibold cursor-pointer shadow-xs"
+                >
+                  Report Waste Pickup
+                </button>
+              )}
             </div>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -635,48 +708,49 @@ export const ResidentView: React.FC<ResidentViewProps> = ({
                   <div
                     key={complaint.id}
                     onClick={() => setSelectedComplaint(complaint)}
-                    className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 overflow-hidden shadow-2xs hover:shadow-md transition-shadow cursor-pointer flex flex-col"
+                    className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200/80 dark:border-slate-800 overflow-hidden shadow-2xs hover:shadow-md transition-all cursor-pointer flex flex-col group"
                   >
                     {initialPhoto ? (
-                      <div className="h-40 bg-slate-950 relative overflow-hidden">
+                      <div className="h-44 bg-slate-950 relative overflow-hidden">
                         <img
                           src={initialPhoto.url}
                           alt="Complaint photo"
-                          className="w-full h-full object-cover"
+                          className="w-full h-full object-cover group-hover:scale-102 transition-transform duration-300"
                         />
-                        <div className="absolute top-2 left-2">
+                        <div className="absolute top-2.5 left-2.5">
                           <StatusBadge status={complaint.status} size="sm" />
                         </div>
-                        <div className="absolute top-2 right-2">
+                        <div className="absolute top-2.5 right-2.5">
                           <UrgencyBadge urgency={complaint.urgency} />
                         </div>
                       </div>
                     ) : (
-                      <div className="h-28 bg-slate-100 dark:bg-slate-800 flex items-center justify-center p-3">
+                      <div className="h-32 bg-slate-100 dark:bg-slate-800 flex items-center justify-center p-3">
                         <MapPin className="w-6 h-6 text-slate-400" />
                       </div>
                     )}
 
                     <div className="p-4 flex-1 flex flex-col justify-between space-y-3">
                       <div>
-                        <div className="flex items-center justify-between text-xs mb-1">
-                          <span className="font-mono font-bold text-blue-600 dark:text-blue-400">
+                        <div className="flex items-center justify-between text-xs mb-1.5">
+                          <span className="font-mono font-bold text-emerald-600 dark:text-emerald-400">
                             {complaint.trackingCode}
                           </span>
-                          <span className="text-slate-400 text-[11px]">
+                          <span className="text-slate-400 dark:text-slate-500 font-mono text-[11px] tabular-nums">
                             {new Date(complaint.createdAt).toLocaleDateString()}
                           </span>
                         </div>
                         <h4 className="text-sm font-bold text-slate-900 dark:text-white line-clamp-1">
                           {complaint.address}
                         </h4>
-                        <p className="text-xs text-slate-500 mt-0.5">{complaint.localityName}</p>
+                        <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">{complaint.localityName}</p>
                       </div>
 
-                      <div className="pt-2 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between text-xs text-slate-500">
-                        <span className="capitalize font-medium">Type: {complaint.wasteType}</span>
-                        <span className="text-emerald-600 dark:text-emerald-400 font-semibold flex items-center gap-1">
-                          View Timeline <ChevronRight className="w-3.5 h-3.5" />
+                      <div className="pt-2.5 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between text-xs text-slate-500 dark:text-slate-400">
+                        <span className="capitalize font-medium">Type: {complaint.wasteType.replace('_', ' ')}</span>
+                        <span className="text-emerald-600 dark:text-emerald-400 font-semibold flex items-center gap-1 group-hover:translate-x-0.5 transition-transform">
+                          <span>Timeline</span>
+                          <ChevronRight className="w-3.5 h-3.5" />
                         </span>
                       </div>
                     </div>
@@ -688,62 +762,62 @@ export const ResidentView: React.FC<ResidentViewProps> = ({
         </div>
       )}
 
-      {/* ---------------------------------------------------------------------- */}
       {/* SUCCESS MODAL ON CREATION */}
-      {/* ---------------------------------------------------------------------- */}
       {createdComplaint && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-in fade-in">
-          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl w-full max-w-lg p-6 shadow-2xl space-y-5 text-center">
-            <div className="w-16 h-16 rounded-full bg-emerald-100 dark:bg-emerald-950/60 text-emerald-600 mx-auto flex items-center justify-center">
-              <CheckCircle className="w-10 h-10" />
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-xs overflow-y-auto">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl w-full max-w-lg p-6 sm:p-7 shadow-2xl space-y-5 text-center my-8">
+            <div className="w-16 h-16 rounded-2xl bg-emerald-100 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 mx-auto flex items-center justify-center shadow-2xs">
+              <CheckCircle className="w-9 h-9" />
             </div>
 
             <div>
-              <h3 className="text-xl font-extrabold text-slate-900 dark:text-white">
+              <h3 className="text-xl font-black text-slate-900 dark:text-white tracking-tight">
                 Complaint Submitted Successfully!
               </h3>
-              <p className="text-xs text-slate-500 mt-1">
+              <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
                 Your complaint and photo metadata have been recorded. Use this unique tracking ID to monitor progress.
               </p>
             </div>
 
             {/* Tracking Code Highlight */}
-            <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 flex items-center justify-between">
+            <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 flex items-center justify-between shadow-2xs">
               <div className="text-left">
-                <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">
                   Tracking ID
                 </span>
-                <p className="text-lg font-mono font-extrabold text-blue-600 dark:text-blue-400">
+                <p className="text-lg font-mono font-extrabold text-emerald-600 dark:text-emerald-400">
                   {createdComplaint.trackingCode}
                 </p>
               </div>
               <button
                 type="button"
                 onClick={() => copyTrackingCode(createdComplaint.trackingCode)}
-                className="px-3 py-1.5 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-700 text-xs font-semibold flex items-center gap-1 hover:bg-slate-50 text-slate-700 dark:text-slate-200 cursor-pointer"
+                className="px-3.5 py-2 rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-700 text-xs font-semibold flex items-center gap-1.5 hover:bg-slate-50 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 cursor-pointer transition-colors shadow-2xs"
               >
                 {copiedTracking ? (
                   <>
-                    <CheckCircle className="w-3.5 h-3.5 text-emerald-600" /> Copied!
+                    <CheckCircle className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+                    <span>Copied!</span>
                   </>
                 ) : (
                   <>
-                    <Copy className="w-3.5 h-3.5" /> Copy ID
+                    <Copy className="w-3.5 h-3.5" />
+                    <span>Copy ID</span>
                   </>
                 )}
               </button>
             </div>
 
-            <div className="text-xs text-slate-500 text-left bg-slate-50 dark:bg-slate-800/40 p-3 rounded-lg border border-slate-100 dark:border-slate-800 space-y-1">
+            <div className="text-xs text-slate-600 dark:text-slate-300 text-left bg-slate-50 dark:bg-slate-800/50 p-3.5 rounded-2xl border border-slate-200/80 dark:border-slate-700/80 space-y-1.5 leading-relaxed">
               <p>
                 <strong>Location:</strong> {createdComplaint.address} ({createdComplaint.localityName})
               </p>
-              <p>
+              <p className="font-mono tabular-nums">
                 <strong>GPS:</strong> {createdComplaint.latitude.toFixed(6)}° N,{' '}
                 {createdComplaint.longitude.toFixed(6)}° E
               </p>
               <p>
-                <strong>Next Step:</strong> The municipal supervisor will review coordinates & photo, then contact {createdComplaint.residentPhone} to confirm before assigning a cleaner.
+                <strong>Next Step:</strong> The municipal supervisor will review coordinates & photo, then contact {createdComplaint.residentPhone} to confirm before dispatching a certified cleaner.
               </p>
             </div>
 
@@ -755,14 +829,14 @@ export const ResidentView: React.FC<ResidentViewProps> = ({
                   setCreatedComplaint(null);
                   setActiveTab('history');
                 }}
-                className="flex-1 py-2.5 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-xs cursor-pointer"
+                className="flex-1 py-3 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-xs cursor-pointer transition-all"
               >
                 View Full Status Timeline
               </button>
               <button
                 type="button"
                 onClick={() => setCreatedComplaint(null)}
-                className="py-2.5 px-4 rounded-xl border border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-300 font-bold text-xs hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer"
+                className="py-3 px-4 rounded-xl border border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-300 font-bold text-xs hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer transition-colors"
               >
                 Done
               </button>
@@ -771,16 +845,14 @@ export const ResidentView: React.FC<ResidentViewProps> = ({
         </div>
       )}
 
-      {/* ---------------------------------------------------------------------- */}
       {/* COMPLAINT DETAIL & TIMELINE MODAL */}
-      {/* ---------------------------------------------------------------------- */}
       {selectedComplaint && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-in fade-in">
-          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto p-6 shadow-2xl space-y-6">
-            <div className="flex items-start justify-between">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-xs overflow-y-auto">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl w-full max-w-2xl max-h-[90vh] overflow-y-auto p-6 sm:p-7 shadow-2xl space-y-6 my-8 text-slate-900 dark:text-slate-100">
+            <div className="flex items-start justify-between gap-4">
               <div>
-                <div className="flex items-center gap-2 mb-1">
-                  <span className="font-mono font-extrabold text-blue-600 dark:text-blue-400 text-sm">
+                <div className="flex items-center gap-2 mb-1.5">
+                  <span className="font-mono font-extrabold text-emerald-600 dark:text-emerald-400 text-sm">
                     {selectedComplaint.trackingCode}
                   </span>
                   <StatusBadge status={selectedComplaint.status} size="sm" />
@@ -789,15 +861,17 @@ export const ResidentView: React.FC<ResidentViewProps> = ({
                 <h3 className="text-lg font-bold text-slate-900 dark:text-white">
                   {selectedComplaint.address}
                 </h3>
-                <p className="text-xs text-slate-500">
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
                   {selectedComplaint.localityName} • Submitted on{' '}
-                  {new Date(selectedComplaint.createdAt).toLocaleString()}
+                  <span className="font-mono tabular-nums">
+                    {new Date(selectedComplaint.createdAt).toLocaleString()}
+                  </span>
                 </p>
               </div>
 
               <button
                 onClick={() => setSelectedComplaint(null)}
-                className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer"
+                className="p-1.5 rounded-xl text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer shrink-0 transition-colors"
                 aria-label="Close modal"
               >
                 <X className="w-5 h-5" />
@@ -805,62 +879,62 @@ export const ResidentView: React.FC<ResidentViewProps> = ({
             </div>
 
             {/* GPS & Contact Snapshot */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs bg-slate-50 dark:bg-slate-800/50 p-4 rounded-xl border border-slate-200 dark:border-slate-700">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs bg-slate-50 dark:bg-slate-800/50 p-4 rounded-2xl border border-slate-200 dark:border-slate-700/80 shadow-2xs">
               <div>
-                <span className="text-[10px] uppercase font-bold text-slate-400 block">
+                <span className="text-[10px] uppercase font-bold text-slate-400 dark:text-slate-500 block">
                   Mandatory GPS Coordinates
                 </span>
-                <p className="font-mono text-slate-800 dark:text-slate-200 mt-0.5">
+                <p className="font-mono tabular-nums text-slate-800 dark:text-slate-200 mt-1">
                   {selectedComplaint.latitude.toFixed(6)}° N, {selectedComplaint.longitude.toFixed(6)}° E
                 </p>
                 <a
                   href={`https://www.google.com/maps?q=${selectedComplaint.latitude},${selectedComplaint.longitude}`}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="text-blue-600 hover:underline flex items-center gap-1 mt-1 font-semibold"
+                  className="text-emerald-600 dark:text-emerald-400 hover:underline flex items-center gap-1 mt-1.5 font-semibold"
                 >
                   Open in Google Maps <ExternalLink className="w-3 h-3" />
                 </a>
               </div>
 
               <div>
-                <span className="text-[10px] uppercase font-bold text-slate-400 block">
+                <span className="text-[10px] uppercase font-bold text-slate-400 dark:text-slate-500 block">
                   Waste Type & Contact
                 </span>
-                <p className="text-slate-800 dark:text-slate-200 capitalize mt-0.5">
+                <p className="text-slate-800 dark:text-slate-200 capitalize mt-1 font-semibold">
                   {selectedComplaint.wasteType.replace('_', ' ')}
                 </p>
-                <p className="text-slate-500 mt-1 flex items-center gap-1">
-                  <Phone className="w-3 h-3" /> {selectedComplaint.residentPhone}
+                <p className="text-slate-500 dark:text-slate-400 mt-1 flex items-center gap-1 font-mono tabular-nums">
+                  <Phone className="w-3.5 h-3.5" /> {selectedComplaint.residentPhone}
                 </p>
               </div>
             </div>
 
             {/* Photos Preview */}
-            <div className="space-y-2">
-              <h4 className="text-xs font-bold text-slate-700 dark:text-slate-300">
-                Photographic Evidence
+            <div className="space-y-2.5">
+              <h4 className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider">
+                Photographic Evidence ({selectedComplaint.photos.length})
               </h4>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 {selectedComplaint.photos.map((photo) => (
                   <div
                     key={photo.id}
-                    className="rounded-xl overflow-hidden border border-slate-200 dark:border-slate-700 bg-slate-950"
+                    className="rounded-2xl overflow-hidden border border-slate-200 dark:border-slate-800 bg-slate-950 shadow-sm"
                   >
-                    <div className="h-44">
+                    <div className="h-48">
                       <img
                         src={photo.url}
                         alt={photo.photoType}
                         className="w-full h-full object-cover"
                       />
                     </div>
-                    <div className="p-2.5 bg-slate-900 text-white text-[11px] flex justify-between items-center">
+                    <div className="p-3 bg-slate-900 text-white text-[11px] flex justify-between items-center">
                       <span className="font-semibold capitalize">
                         {photo.photoType === 'resident_initial'
-                          ? 'Initial Complaint Photo'
-                          : 'After-Cleaning Evidence'}
+                          ? 'Initial Resident Photo'
+                          : 'After-Cleaning Proof'}
                       </span>
-                      <span className="text-slate-400">
+                      <span className="text-slate-400 font-mono tabular-nums">
                         {new Date(photo.createdAt).toLocaleTimeString([], {
                           hour: '2-digit',
                           minute: '2-digit',
@@ -881,7 +955,7 @@ export const ResidentView: React.FC<ResidentViewProps> = ({
             <div className="pt-3 border-t border-slate-200 dark:border-slate-800 flex justify-end">
               <button
                 onClick={() => setSelectedComplaint(null)}
-                className="px-4 py-2 bg-slate-800 hover:bg-slate-900 text-white rounded-lg text-xs font-semibold cursor-pointer"
+                className="px-5 py-2.5 bg-slate-800 hover:bg-slate-900 dark:bg-slate-700 dark:hover:bg-slate-600 text-white rounded-xl text-xs font-semibold cursor-pointer transition-colors"
               >
                 Close Details
               </button>

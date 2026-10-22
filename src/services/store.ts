@@ -274,12 +274,12 @@ class PortalStore {
           photos: (c.photos || []).map((p: any) => ({
             id: p.id,
             complaintId: p.complaint_id,
-            uploaderId: p.uploader_id,
+            uploaderId: p.uploaded_by || p.uploader_id,
             photoType: p.photo_type,
             storagePath: p.storage_path,
             url: p.storage_path,
             mimeType: p.mime_type,
-            fileSizeBytes: p.file_size_bytes,
+            fileSizeBytes: p.size_bytes || p.file_size_bytes || 0,
             createdAt: p.created_at,
           })),
           history: (c.history || []).map((h: any) => ({
@@ -960,10 +960,11 @@ class PortalStore {
         // 3. Insert photo record in complaint_photos
         const { error: photoDbError } = await supabase.from('complaint_photos').insert({
           complaint_id: insertedComplaint.id,
-          uploader_id: authUserId,
+          uploaded_by: authUserId,
           photo_type: 'resident_initial',
           storage_path: activeStoragePath,
           mime_type: data.photoFile.mimeType,
+          size_bytes: data.photoFile.sizeBytes,
           file_size_bytes: data.photoFile.sizeBytes,
         });
 

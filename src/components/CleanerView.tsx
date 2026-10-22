@@ -25,6 +25,8 @@ import {
   FileCheck,
   AlertTriangle,
   RotateCcw,
+  Sparkles,
+  ArrowRight,
 } from 'lucide-react';
 
 interface CleanerViewProps {
@@ -143,23 +145,25 @@ export const CleanerView: React.FC<CleanerViewProps> = ({
     return (
       <div className="space-y-6">
         <div
-          className={`p-6 rounded-2xl border ${
+          className={`p-6 sm:p-8 rounded-3xl border shadow-sm ${
             isPendingApproval
-              ? 'bg-amber-50 border-amber-300 text-amber-950'
-              : 'bg-rose-50 border-rose-300 text-rose-950'
+              ? 'bg-amber-50 dark:bg-amber-950/40 border-amber-200 dark:border-amber-800 text-amber-950 dark:text-amber-100'
+              : 'bg-rose-50 dark:bg-rose-950/40 border-rose-200 dark:border-rose-800 text-rose-950 dark:text-rose-100'
           }`}
         >
-          <div className="flex items-start gap-4">
+          <div className="flex flex-col sm:flex-row items-start gap-4">
             <div
-              className={`p-3 rounded-2xl ${
-                isPendingApproval ? 'bg-amber-100 text-amber-700' : 'bg-rose-100 text-rose-700'
+              className={`p-3.5 rounded-2xl shrink-0 ${
+                isPendingApproval
+                  ? 'bg-amber-100 dark:bg-amber-900/60 text-amber-700 dark:text-amber-300'
+                  : 'bg-rose-100 dark:bg-rose-900/60 text-rose-700 dark:text-rose-300'
               }`}
             >
               <Clock className="w-8 h-8" />
             </div>
-            <div className="space-y-2 flex-1">
-              <div className="flex items-center gap-2">
-                <h3 className="text-lg font-bold">
+            <div className="space-y-3 flex-1">
+              <div className="flex flex-wrap items-center gap-2">
+                <h3 className="text-lg font-black tracking-tight">
                   {isPendingApproval
                     ? 'Cleaner Application Under Supervisor Review'
                     : 'Cleaner Account Not Active'}
@@ -167,32 +171,34 @@ export const CleanerView: React.FC<CleanerViewProps> = ({
                 <span
                   className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider ${
                     isPendingApproval
-                      ? 'bg-amber-200 text-amber-900'
-                      : 'bg-rose-200 text-rose-900'
+                      ? 'bg-amber-200 dark:bg-amber-900 text-amber-900 dark:text-amber-200'
+                      : 'bg-rose-200 dark:bg-rose-900 text-rose-900 dark:text-rose-200'
                   }`}
                 >
                   {currentUser.accountStatus}
                 </span>
               </div>
-              <p className="text-xs text-slate-600 leading-relaxed max-w-2xl">
+              <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed max-w-2xl">
                 {isPendingApproval
                   ? 'Your cleaner profile and requested preferred service localities have been registered. Operational assignments and cleaning actions remain locked until an authorized municipal supervisor reviews and approves your application.'
                   : 'Your account is currently suspended or inactive. Please contact your municipal operations supervisor.'}
               </p>
 
-              <div className="pt-3 border-t border-amber-200/60">
-                <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500 block mb-1.5">
+              <div className="pt-3 border-t border-amber-200/60 dark:border-amber-800/60">
+                <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 block mb-2">
                   Requested Service Localities ({myServiceAreas.length}):
                 </span>
                 <div className="flex flex-wrap gap-2">
                   {myServiceAreas.map((sa) => (
                     <span
                       key={sa.localityId}
-                      className="px-2.5 py-1 rounded-lg text-xs font-semibold bg-white border border-amber-200 text-slate-800 flex items-center gap-1.5"
+                      className="px-3 py-1.5 rounded-xl text-xs font-semibold bg-white dark:bg-slate-800 border border-amber-200 dark:border-amber-800 text-slate-800 dark:text-slate-200 flex items-center gap-1.5 shadow-2xs"
                     >
-                      <MapPin className="w-3 h-3 text-amber-600" />
+                      <MapPin className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
                       {sa.localityName}
-                      <span className="text-[10px] font-bold text-amber-700 uppercase">(Pending)</span>
+                      <span className="text-[10px] font-bold text-amber-700 dark:text-amber-300 uppercase">
+                        (Pending)
+                      </span>
                     </span>
                   ))}
                 </div>
@@ -208,46 +214,67 @@ export const CleanerView: React.FC<CleanerViewProps> = ({
     <div className="space-y-6">
       {/* Cleaner Dashboard Summary Cards */}
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
-        <div className="p-4 bg-white rounded-2xl border border-slate-200 shadow-xs space-y-1">
-          <span className="text-[10px] uppercase tracking-wider font-bold text-slate-400">Total Assigned</span>
-          <p className="text-2xl font-black text-slate-900">{myAssignedTasks.length}</p>
-          <span className="text-[11px] text-slate-500">Pickup requests</span>
+        <div className="p-4 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200/80 dark:border-slate-800 shadow-2xs space-y-1">
+          <span className="text-[10px] uppercase tracking-wider font-bold text-slate-400 dark:text-slate-500">
+            Total Assigned
+          </span>
+          <p className="text-2xl font-black font-mono tabular-nums text-slate-900 dark:text-white">
+            {myAssignedTasks.length}
+          </p>
+          <span className="text-[11px] text-slate-500 dark:text-slate-400">Pickup requests</span>
         </div>
-        <div className="p-4 bg-white rounded-2xl border border-slate-200 shadow-xs space-y-1">
-          <span className="text-[10px] uppercase tracking-wider font-bold text-blue-600">Pending Start</span>
-          <p className="text-2xl font-black text-blue-800">
+
+        <div className="p-4 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200/80 dark:border-slate-800 shadow-2xs space-y-1">
+          <span className="text-[10px] uppercase tracking-wider font-bold text-blue-600 dark:text-blue-400">
+            Pending Start
+          </span>
+          <p className="text-2xl font-black font-mono tabular-nums text-blue-700 dark:text-blue-300">
             {myAssignedTasks.filter((t) => t.status === 'assigned').length}
           </p>
-          <span className="text-[11px] text-slate-500">Ready to dispatch</span>
+          <span className="text-[11px] text-slate-500 dark:text-slate-400">Ready to dispatch</span>
         </div>
-        <div className="p-4 bg-white rounded-2xl border border-slate-200 shadow-xs space-y-1">
-          <span className="text-[10px] uppercase tracking-wider font-bold text-purple-600">In Progress</span>
-          <p className="text-2xl font-black text-purple-800">
+
+        <div className="p-4 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200/80 dark:border-slate-800 shadow-2xs space-y-1">
+          <span className="text-[10px] uppercase tracking-wider font-bold text-purple-600 dark:text-purple-400">
+            In Progress
+          </span>
+          <p className="text-2xl font-black font-mono tabular-nums text-purple-700 dark:text-purple-300">
             {myAssignedTasks.filter((t) => t.status === 'in_progress').length}
           </p>
-          <span className="text-[11px] text-slate-500">Active on-site</span>
+          <span className="text-[11px] text-slate-500 dark:text-slate-400">Active on-site</span>
         </div>
-        <div className="p-4 bg-white rounded-2xl border border-slate-200 shadow-xs space-y-1">
-          <span className="text-[10px] uppercase tracking-wider font-bold text-emerald-600">Completed</span>
-          <p className="text-2xl font-black text-emerald-800">
+
+        <div className="p-4 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200/80 dark:border-slate-800 shadow-2xs space-y-1">
+          <span className="text-[10px] uppercase tracking-wider font-bold text-emerald-600 dark:text-emerald-400">
+            Completed
+          </span>
+          <p className="text-2xl font-black font-mono tabular-nums text-emerald-700 dark:text-emerald-300">
             {myAssignedTasks.filter((t) => t.status === 'completed' || t.status === 'awaiting_verification').length}
           </p>
-          <span className="text-[11px] text-slate-500">Resolved / Review</span>
+          <span className="text-[11px] text-slate-500 dark:text-slate-400">Resolved / Review</span>
         </div>
-        <div className="p-4 bg-white rounded-2xl border border-slate-200 shadow-xs space-y-1 col-span-2 sm:col-span-1">
-          <span className="text-[10px] uppercase tracking-wider font-bold text-slate-400">Assigned Supervisor</span>
+
+        <div className="p-4 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200/80 dark:border-slate-800 shadow-2xs space-y-1 col-span-2 sm:col-span-1">
+          <span className="text-[10px] uppercase tracking-wider font-bold text-slate-400 dark:text-slate-500">
+            Supervisor
+          </span>
           <div className="flex items-center gap-1.5 mt-1">
-            <ShieldCheck className="w-4 h-4 text-blue-600 shrink-0" />
-            <p className="text-xs font-bold text-slate-900 truncate">
-              {currentUser.supervisorName || 'Not Assigned'}
+            <ShieldCheck className="w-4 h-4 text-blue-600 dark:text-blue-400 shrink-0" />
+            <p className="text-xs font-bold text-slate-900 dark:text-white truncate">
+              {currentUser.supervisorName || 'Unassigned'}
             </p>
           </div>
-          <span className="text-[11px] text-slate-500">Field Supervisor</span>
+          <span className="text-[11px] text-slate-500 dark:text-slate-400">Assigned Lead</span>
         </div>
-        <div className="p-4 bg-white rounded-2xl border border-slate-200 shadow-xs space-y-1 col-span-2 sm:col-span-1">
-          <span className="text-[10px] uppercase tracking-wider font-bold text-slate-400">Authorized Localities</span>
-          <p className="text-2xl font-black text-emerald-700">{approvedAreas.length}</p>
-          <span className="text-[11px] text-slate-500 truncate block">
+
+        <div className="p-4 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200/80 dark:border-slate-800 shadow-2xs space-y-1 col-span-2 sm:col-span-1">
+          <span className="text-[10px] uppercase tracking-wider font-bold text-slate-400 dark:text-slate-500">
+            Wards Authorized
+          </span>
+          <p className="text-2xl font-black font-mono tabular-nums text-emerald-700 dark:text-emerald-300">
+            {approvedAreas.length}
+          </p>
+          <span className="text-[11px] text-slate-500 dark:text-slate-400 truncate block">
             {approvedAreas.length > 0
               ? approvedAreas.map((a) => a.localityName).slice(0, 2).join(', ') + (approvedAreas.length > 2 ? '...' : '')
               : 'None'}
@@ -256,28 +283,28 @@ export const CleanerView: React.FC<CleanerViewProps> = ({
       </div>
 
       {/* Navigation Tabs */}
-      <div className="flex border-b border-slate-200 bg-white rounded-t-2xl px-4 pt-2 shadow-xs">
+      <div className="flex border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 rounded-2xl px-4 pt-2 shadow-2xs">
         <button
           onClick={() => setActiveTab('tasks')}
           className={`py-3 px-5 text-xs font-bold border-b-2 transition-all flex items-center gap-2 cursor-pointer ${
             activeTab === 'tasks'
-              ? 'border-emerald-600 text-emerald-800'
-              : 'border-transparent text-slate-500 hover:text-slate-800'
+              ? 'border-emerald-600 text-emerald-700 dark:text-emerald-400'
+              : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'
           }`}
         >
-          <HardHat className="w-4 h-4 text-emerald-600" />
-          My Assigned Pickup Tasks ({myAssignedTasks.length})
+          <HardHat className="w-4 h-4" />
+          <span>My Assigned Pickup Tasks ({myAssignedTasks.length})</span>
         </button>
         <button
           onClick={() => setActiveTab('areas')}
           className={`py-3 px-5 text-xs font-bold border-b-2 transition-all flex items-center gap-2 cursor-pointer ${
             activeTab === 'areas'
-              ? 'border-emerald-600 text-emerald-800'
-              : 'border-transparent text-slate-500 hover:text-slate-800'
+              ? 'border-emerald-600 text-emerald-700 dark:text-emerald-400'
+              : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'
           }`}
         >
-          <MapPin className="w-4 h-4 text-slate-400" />
-          Authorized Service Localities ({approvedAreas.length})
+          <MapPin className="w-4 h-4" />
+          <span>Authorized Service Localities ({approvedAreas.length})</span>
         </button>
       </div>
 
@@ -285,10 +312,14 @@ export const CleanerView: React.FC<CleanerViewProps> = ({
       {activeTab === 'tasks' && (
         <div className="space-y-4">
           {myAssignedTasks.length === 0 ? (
-            <div className="p-12 text-center bg-white rounded-2xl border border-slate-200 shadow-xs">
-              <HardHat className="w-12 h-12 text-slate-300 mx-auto mb-3" />
-              <h3 className="text-base font-bold text-slate-800">No Pickup Tasks Assigned</h3>
-              <p className="text-xs text-slate-500 mt-1 max-w-md mx-auto">
+            <div className="p-12 text-center bg-white dark:bg-slate-900 rounded-3xl border border-slate-200/80 dark:border-slate-800 shadow-sm space-y-3">
+              <div className="w-14 h-14 rounded-2xl bg-slate-100 dark:bg-slate-800 text-slate-400 flex items-center justify-center mx-auto">
+                <HardHat className="w-7 h-7" />
+              </div>
+              <h3 className="text-base font-bold text-slate-800 dark:text-slate-200">
+                No Pickup Tasks Assigned
+              </h3>
+              <p className="text-xs text-slate-500 dark:text-slate-400 max-w-md mx-auto leading-relaxed">
                 Cleaners can only view and execute tasks directly assigned to them by municipal supervisors in their approved service localities. Check back once a task is dispatched to you.
               </p>
             </div>
@@ -296,12 +327,11 @@ export const CleanerView: React.FC<CleanerViewProps> = ({
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
               {myAssignedTasks.map((task) => {
                 const initialPhoto = task.photos.find((p) => p.photoType === 'resident_initial');
-                const completionPhoto = task.photos.find((p) => p.photoType === 'cleaner_completion');
 
                 return (
                   <div
                     key={task.id}
-                    className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-xs hover:shadow-md transition-shadow flex flex-col justify-between"
+                    className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200/80 dark:border-slate-800 overflow-hidden shadow-2xs hover:shadow-md transition-all flex flex-col justify-between"
                   >
                     <div>
                       {initialPhoto && (
@@ -311,40 +341,45 @@ export const CleanerView: React.FC<CleanerViewProps> = ({
                             alt="Initial waste"
                             className="w-full h-full object-cover"
                           />
-                          <div className="absolute top-2 right-2">
+                          <div className="absolute top-2.5 right-2.5">
                             <UrgencyBadge urgency={task.urgency} />
+                          </div>
+                          <div className="absolute top-2.5 left-2.5">
+                            <StatusBadge status={task.status} size="sm" />
                           </div>
                         </div>
                       )}
 
                       <div className="p-4 space-y-3">
                         <div className="flex items-center justify-between">
-                          <span className="font-mono font-bold text-slate-900 text-xs">
+                          <span className="font-mono font-bold text-slate-900 dark:text-white text-xs">
                             {task.trackingCode}
                           </span>
-                          <StatusBadge status={task.status} size="sm" />
+                          {!initialPhoto && <StatusBadge status={task.status} size="sm" />}
                         </div>
 
                         <div>
-                          <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block">
+                          <span className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider block">
                             Location
                           </span>
-                          <p className="text-xs font-semibold text-slate-800">{task.address}</p>
-                          <span className="text-xs text-emerald-800 font-medium flex items-center gap-1 mt-0.5">
-                            <MapPin className="w-3 h-3 text-emerald-600" />
+                          <p className="text-xs font-bold text-slate-800 dark:text-slate-200 mt-0.5 line-clamp-1">
+                            {task.address}
+                          </p>
+                          <span className="text-xs text-emerald-700 dark:text-emerald-400 font-medium flex items-center gap-1 mt-0.5">
+                            <MapPin className="w-3.5 h-3.5" />
                             {task.localityName}
                           </span>
                         </div>
 
-                        <div className="flex items-center justify-between text-xs pt-1 border-t border-slate-100">
-                          <span className="text-slate-500">Waste Type:</span>
-                          <span className="font-semibold text-slate-800 capitalize">
+                        <div className="flex items-center justify-between text-xs pt-2 border-t border-slate-100 dark:border-slate-800">
+                          <span className="text-slate-500 dark:text-slate-400">Waste Type:</span>
+                          <span className="font-semibold text-slate-800 dark:text-slate-200 capitalize">
                             {task.wasteType.replace('_', ' ')}
                           </span>
                         </div>
 
                         {task.supervisorNotes && (
-                          <div className="p-2 rounded-lg bg-amber-50 border border-amber-200 text-amber-900 text-[11px]">
+                          <div className="p-2.5 rounded-xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/80 text-amber-900 dark:text-amber-300 text-[11px] leading-relaxed">
                             <span className="font-bold">Supervisor Note:</span> {task.supervisorNotes}
                           </div>
                         )}
@@ -357,14 +392,15 @@ export const CleanerView: React.FC<CleanerViewProps> = ({
                           href={`https://www.google.com/maps/dir/?api=1&destination=${task.latitude},${task.longitude}`}
                           target="_blank"
                           rel="noreferrer"
-                          className="flex-1 py-2 px-3 rounded-xl border border-slate-300 hover:bg-slate-50 text-slate-700 text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors"
+                          className="flex-1 py-2 px-3 rounded-xl border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors"
                         >
-                          <Navigation className="w-3.5 h-3.5 text-blue-600" /> Navigate GPS
+                          <Navigation className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
+                          <span>Navigate</span>
                         </a>
 
                         <button
                           onClick={() => setSelectedTask(task)}
-                          className="flex-1 py-2 px-3 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+                          className="flex-1 py-2 px-3 rounded-xl bg-slate-900 dark:bg-slate-800 hover:bg-slate-800 dark:hover:bg-slate-700 text-white text-xs font-bold flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
                         >
                           Work Details
                         </button>
@@ -373,18 +409,20 @@ export const CleanerView: React.FC<CleanerViewProps> = ({
                       {task.status === 'assigned' && (
                         <button
                           onClick={() => handleStartWork(task.id)}
-                          className="w-full py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold flex items-center justify-center gap-1.5 shadow-xs transition-colors cursor-pointer"
+                          className="w-full py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold flex items-center justify-center gap-1.5 shadow-xs transition-all cursor-pointer"
                         >
-                          <PlayCircle className="w-4 h-4" /> Start Pickup Work
+                          <PlayCircle className="w-4 h-4" />
+                          <span>Start Pickup Work</span>
                         </button>
                       )}
 
                       {task.status === 'in_progress' && (
                         <button
                           onClick={() => setSelectedTask(task)}
-                          className="w-full py-2 rounded-xl bg-orange-600 hover:bg-orange-700 text-white text-xs font-bold flex items-center justify-center gap-1.5 shadow-xs transition-colors cursor-pointer"
+                          className="w-full py-2.5 rounded-xl bg-orange-600 hover:bg-orange-700 text-white text-xs font-bold flex items-center justify-center gap-1.5 shadow-xs transition-all cursor-pointer"
                         >
-                          <Camera className="w-4 h-4" /> Upload Completion Evidence
+                          <Camera className="w-4 h-4" />
+                          <span>Upload Completion Evidence</span>
                         </button>
                       )}
                     </div>
@@ -398,10 +436,12 @@ export const CleanerView: React.FC<CleanerViewProps> = ({
 
       {/* TAB 2: SERVICE LOCALITIES */}
       {activeTab === 'areas' && (
-        <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-xs space-y-6">
+        <div className="bg-white dark:bg-slate-900 p-6 sm:p-8 rounded-3xl border border-slate-200/80 dark:border-slate-800 shadow-sm space-y-6">
           <div>
-            <h3 className="text-base font-bold text-slate-900">Your Authorized Service Localities</h3>
-            <p className="text-xs text-slate-500 mt-1">
+            <h3 className="text-base font-bold text-slate-900 dark:text-white">
+              Your Authorized Service Localities
+            </h3>
+            <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
               Supervisors dispatch cleaning tasks based on your approved localities.
             </p>
           </div>
@@ -410,21 +450,21 @@ export const CleanerView: React.FC<CleanerViewProps> = ({
             {myServiceAreas.map((sa) => (
               <div
                 key={sa.localityId}
-                className={`p-3.5 rounded-xl border flex items-center justify-between ${
+                className={`p-4 rounded-2xl border flex items-center justify-between shadow-2xs ${
                   sa.isApproved
-                    ? 'bg-emerald-50 border-emerald-200 text-emerald-950'
-                    : 'bg-slate-50 border-slate-200 text-slate-700'
+                    ? 'bg-emerald-50 dark:bg-emerald-950/40 border-emerald-200 dark:border-emerald-800 text-emerald-950 dark:text-emerald-200'
+                    : 'bg-slate-50 dark:bg-slate-800/60 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300'
                 }`}
               >
-                <div className="flex items-center gap-2">
-                  <MapPin className="w-4 h-4 text-emerald-600" />
+                <div className="flex items-center gap-2.5">
+                  <MapPin className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
                   <span className="font-bold text-xs">{sa.localityName}</span>
                 </div>
                 <span
-                  className={`text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full ${
+                  className={`text-[10px] font-bold uppercase tracking-wider px-2.5 py-0.5 rounded-full ${
                     sa.isApproved
-                      ? 'bg-emerald-200 text-emerald-900'
-                      : 'bg-slate-200 text-slate-600'
+                      ? 'bg-emerald-200 dark:bg-emerald-900/80 text-emerald-900 dark:text-emerald-200'
+                      : 'bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300'
                   }`}
                 >
                   {sa.isApproved ? 'Approved' : 'Pending Review'}
@@ -437,46 +477,51 @@ export const CleanerView: React.FC<CleanerViewProps> = ({
 
       {/* TASK MODAL / COMPLETION SUBMISSION */}
       {selectedTask && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in overflow-y-auto">
-          <div className="bg-white border border-slate-200 rounded-2xl w-full max-w-xl p-6 shadow-xl space-y-5 my-8">
-            <div className="flex items-start justify-between">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-xs overflow-y-auto">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl w-full max-w-xl p-6 sm:p-7 shadow-2xl space-y-5 my-8 text-slate-900 dark:text-slate-100">
+            <div className="flex items-start justify-between gap-4">
               <div>
-                <div className="flex items-center gap-2">
-                  <span className="font-mono font-bold text-slate-900 text-base">
+                <div className="flex items-center gap-2 mb-1">
+                  <span className="font-mono font-bold text-slate-900 dark:text-white text-base">
                     {selectedTask.trackingCode}
                   </span>
                   <StatusBadge status={selectedTask.status} size="sm" />
                 </div>
-                <p className="text-xs text-slate-500 mt-1">
+                <p className="text-xs text-slate-500 dark:text-slate-400">
                   {selectedTask.address} • {selectedTask.localityName}
                 </p>
               </div>
               <button
                 onClick={() => setSelectedTask(null)}
-                className="p-1 rounded-lg text-slate-400 hover:text-slate-600"
+                className="p-1.5 rounded-xl text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer shrink-0 transition-colors"
+                aria-label="Close modal"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            {/* Task Details */}
-            <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200 space-y-2 text-xs">
+            {/* Task Details Snapshot */}
+            <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700/80 space-y-2 text-xs shadow-2xs">
               <div className="flex justify-between">
-                <span className="text-slate-500">Waste Type:</span>
-                <span className="font-semibold text-slate-800 capitalize">
+                <span className="text-slate-500 dark:text-slate-400">Waste Type:</span>
+                <span className="font-semibold text-slate-800 dark:text-slate-200 capitalize">
                   {selectedTask.wasteType.replace('_', ' ')}
                 </span>
               </div>
               <div className="flex justify-between">
-                <span className="text-slate-500">GPS Coordinates:</span>
-                <span className="font-mono text-slate-800">
+                <span className="text-slate-500 dark:text-slate-400">GPS Coordinates:</span>
+                <span className="font-mono tabular-nums text-slate-800 dark:text-slate-200">
                   {selectedTask.latitude.toFixed(6)}, {selectedTask.longitude.toFixed(6)}
                 </span>
               </div>
               {selectedTask.supervisorNotes && (
-                <div className="pt-2 border-t border-slate-200">
-                  <span className="font-bold text-amber-900 block">Supervisor Instructions:</span>
-                  <p className="text-amber-800 mt-0.5">{selectedTask.supervisorNotes}</p>
+                <div className="pt-2 border-t border-slate-200 dark:border-slate-700">
+                  <span className="font-bold text-amber-900 dark:text-amber-300 block">
+                    Supervisor Instructions:
+                  </span>
+                  <p className="text-amber-800 dark:text-amber-200 mt-0.5 leading-relaxed">
+                    {selectedTask.supervisorNotes}
+                  </p>
                 </div>
               )}
             </div>
@@ -484,17 +529,17 @@ export const CleanerView: React.FC<CleanerViewProps> = ({
             {/* If In Progress: Completion Proof Upload Form */}
             {selectedTask.status === 'in_progress' ? (
               <form onSubmit={handleSubmitCompletion} className="space-y-4 text-xs">
-                <div className="space-y-1.5">
-                  <label className="block font-bold text-slate-800">
+                <div className="space-y-2">
+                  <label className="block font-bold text-slate-800 dark:text-slate-200">
                     Mandatory After-Cleaning Photographic Evidence *
                   </label>
-                  <p className="text-[11px] text-slate-500">
+                  <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed">
                     Upload clear photo proof that the waste has been completely cleared. Max 3 MB (JPG/PNG).
                   </p>
 
-                  <div className="mt-2">
+                  <div>
                     {completionPhotoPreview ? (
-                      <div className="relative rounded-xl overflow-hidden border border-emerald-300">
+                      <div className="relative rounded-2xl overflow-hidden border border-emerald-300 dark:border-emerald-700 shadow-sm">
                         <img
                           src={completionPhotoPreview}
                           alt="Completion proof"
@@ -506,16 +551,21 @@ export const CleanerView: React.FC<CleanerViewProps> = ({
                             setCompletionPhotoPreview(null);
                             setCompletionFileMeta(null);
                           }}
-                          className="absolute top-2 right-2 p-1 rounded-full bg-slate-900/80 text-white hover:bg-slate-900"
+                          className="absolute top-2.5 right-2.5 p-1.5 rounded-full bg-slate-900/80 text-white hover:bg-slate-900 cursor-pointer shadow-md"
+                          title="Remove photo"
                         >
                           <X className="w-4 h-4" />
                         </button>
                       </div>
                     ) : (
-                      <label className="flex flex-col items-center justify-center w-full h-36 border-2 border-dashed border-slate-300 hover:border-emerald-500 rounded-xl cursor-pointer bg-slate-50/50 hover:bg-emerald-50/20 transition-all">
-                        <Camera className="w-8 h-8 text-slate-400 mb-1" />
-                        <span className="font-bold text-slate-700">Click to upload completion photo</span>
-                        <span className="text-[10px] text-slate-400 mt-0.5">JPG, JPEG, PNG up to 3 MB</span>
+                      <label className="flex flex-col items-center justify-center w-full h-36 border-2 border-dashed border-slate-300 dark:border-slate-700 hover:border-emerald-500 rounded-2xl cursor-pointer bg-slate-50/50 dark:bg-slate-800/40 hover:bg-emerald-50/20 transition-all">
+                        <Camera className="w-8 h-8 text-slate-400 dark:text-slate-500 mb-1.5" />
+                        <span className="font-bold text-slate-700 dark:text-slate-200">
+                          Click to upload completion photo
+                        </span>
+                        <span className="text-[10px] text-slate-400 dark:text-slate-500 mt-0.5">
+                          JPG, JPEG, PNG up to 3 MB
+                        </span>
                         <input
                           type="file"
                           accept="image/jpeg,image/jpg,image/png"
@@ -528,7 +578,7 @@ export const CleanerView: React.FC<CleanerViewProps> = ({
                 </div>
 
                 <div>
-                  <label className="block font-bold text-slate-800 mb-1">
+                  <label className="block font-bold text-slate-800 dark:text-slate-200 mb-1.5">
                     Completion Notes (Optional)
                   </label>
                   <input
@@ -536,13 +586,13 @@ export const CleanerView: React.FC<CleanerViewProps> = ({
                     value={completionNotes}
                     onChange={(e) => setCompletionNotes(e.target.value)}
                     placeholder="e.g. Cleared 2 bags of debris, sidewalk sanitized."
-                    className="w-full px-3 py-2 rounded-xl border border-slate-300 text-xs bg-white text-slate-900"
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 text-xs bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 focus:outline-hidden transition-colors"
                   />
                 </div>
 
                 {completionError && (
-                  <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 text-xs flex items-center gap-2">
-                    <AlertCircle className="w-4 h-4 shrink-0" />
+                  <div className="p-3.5 rounded-2xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800 text-rose-800 dark:text-rose-200 text-xs flex items-center gap-2">
+                    <AlertCircle className="w-4 h-4 shrink-0 text-rose-600 dark:text-rose-400" />
                     <span>{completionError}</span>
                   </div>
                 )}
@@ -550,29 +600,32 @@ export const CleanerView: React.FC<CleanerViewProps> = ({
                 <button
                   type="submit"
                   disabled={isSubmittingCompletion || !completionFileMeta}
-                  className="w-full py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-xs transition-colors cursor-pointer disabled:opacity-50 flex items-center justify-center gap-1.5"
+                  className="w-full py-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-sm shadow-emerald-600/20 transition-all cursor-pointer disabled:opacity-50 flex items-center justify-center gap-2"
                 >
                   <CheckCircle2 className="w-4 h-4" />
-                  {isSubmittingCompletion
-                    ? 'Submitting Proof...'
-                    : 'Submit Completion for Supervisor Approval'}
+                  <span>
+                    {isSubmittingCompletion
+                      ? 'Submitting Proof...'
+                      : 'Submit Completion for Supervisor Approval'}
+                  </span>
                 </button>
               </form>
             ) : selectedTask.status === 'assigned' ? (
-              <div className="space-y-3">
-                <p className="text-xs text-slate-600">
-                  This complaint has been assigned to you. Once you arrive at the location, click Start Pickup Work to begin.
+              <div className="space-y-4">
+                <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
+                  This complaint has been dispatched to you. Once you arrive at the waste location, click below to mark work in progress.
                 </p>
                 <button
                   onClick={() => handleStartWork(selectedTask.id)}
-                  className="w-full py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-xs cursor-pointer flex items-center justify-center gap-2"
+                  className="w-full py-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-sm shadow-emerald-600/20 cursor-pointer flex items-center justify-center gap-2 transition-all"
                 >
-                  <PlayCircle className="w-4 h-4" /> Start Pickup Work Now
+                  <PlayCircle className="w-4 h-4" />
+                  <span>Start Pickup Work Now</span>
                 </button>
               </div>
             ) : (
-              <div className="space-y-3">
-                <p className="text-xs text-slate-600">
+              <div className="space-y-4">
+                <p className="text-xs text-slate-600 dark:text-slate-300">
                   {selectedTask.status === 'awaiting_verification'
                     ? 'Completion evidence has been submitted and is currently awaiting supervisor review and sign-off.'
                     : 'This task has been resolved and closed.'}

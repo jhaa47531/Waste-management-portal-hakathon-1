@@ -33,6 +33,9 @@ import {
   Check,
   Clock,
   ShieldCheck,
+  Phone,
+  ArrowRight,
+  Filter,
 } from 'lucide-react';
 
 interface SupervisorViewProps {
@@ -41,7 +44,7 @@ interface SupervisorViewProps {
   localities: Locality[];
   users: UserProfile[];
   serviceAreas: CleanerServiceArea[];
-  cleanerApplications: CleanerApplication[];
+  cleanerApplications?: CleanerApplication[];
 }
 
 export const SupervisorView: React.FC<SupervisorViewProps> = ({
@@ -115,7 +118,6 @@ export const SupervisorView: React.FC<SupervisorViewProps> = ({
   const eligibleCleaners = selectedComplaint
     ? users.filter((u) => {
         if (u.role !== 'cleaner' || u.accountStatus !== 'active') return false;
-        // Must have an approved service area in this complaint's locality
         return serviceAreas.some(
           (sa) => sa.cleanerId === u.id && sa.localityId === selectedComplaint.localityId && sa.isApproved
         );
@@ -201,12 +203,12 @@ export const SupervisorView: React.FC<SupervisorViewProps> = ({
   };
 
   // Cleaner Application Review Actions
-  const handleToggleLocalityForApp = (cleanerId: string, localityId: string) => {
+  const handleToggleLocalityForApp = (cleanerId: string, locId: string) => {
     setAppLocalitySelection((prev) => {
       const current = prev[cleanerId] || [];
-      const updated = current.includes(localityId)
-        ? current.filter((id) => id !== localityId)
-        : [...current, localityId];
+      const updated = current.includes(locId)
+        ? current.filter((id) => id !== locId)
+        : [...current, locId];
       return { ...prev, [cleanerId]: updated };
     });
   };
@@ -241,40 +243,40 @@ export const SupervisorView: React.FC<SupervisorViewProps> = ({
   return (
     <div className="space-y-6">
       {/* Top Navigation Tabs */}
-      <div className="flex items-center justify-between border-b border-slate-200 bg-white rounded-2xl p-2 shadow-xs">
-        <div className="flex items-center gap-2">
+      <div className="flex flex-wrap items-center justify-between border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 rounded-2xl p-2 shadow-2xs gap-2">
+        <div className="flex flex-wrap items-center gap-1.5">
           <button
             onClick={() => setViewMode('queue')}
             className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer ${
               viewMode === 'queue'
-                ? 'bg-slate-900 text-white shadow-xs'
-                : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+                ? 'bg-slate-900 dark:bg-slate-800 text-white shadow-xs'
+                : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800/60'
             }`}
           >
-            <ClipboardList className="w-4 h-4 text-emerald-400" />
-            Operational Complaints Queue ({complaints.length})
+            <ClipboardList className="w-4 h-4 text-emerald-500" />
+            <span>Operational Queue ({complaints.length})</span>
           </button>
           <button
             onClick={() => setViewMode('my_cleaners')}
             className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer ${
               viewMode === 'my_cleaners'
-                ? 'bg-slate-900 text-white shadow-xs'
-                : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+                ? 'bg-slate-900 dark:bg-slate-800 text-white shadow-xs'
+                : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800/60'
             }`}
           >
-            <UserCheck className="w-4 h-4 text-blue-400" />
-            My Assigned Cleaners ({myCleaners.length})
+            <UserCheck className="w-4 h-4 text-blue-500" />
+            <span>My Team ({myCleaners.length})</span>
           </button>
           <button
             onClick={() => setViewMode('cleaners')}
             className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer ${
               viewMode === 'cleaners'
-                ? 'bg-slate-900 text-white shadow-xs'
-                : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+                ? 'bg-slate-900 dark:bg-slate-800 text-white shadow-xs'
+                : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800/60'
             }`}
           >
-            <HardHat className="w-4 h-4 text-amber-400" />
-            Cleaner Applications ({pendingCleanersCount} Pending)
+            <HardHat className="w-4 h-4 text-amber-500" />
+            <span>Cleaner Applications ({pendingCleanersCount} Pending)</span>
           </button>
         </div>
       </div>
@@ -286,52 +288,58 @@ export const SupervisorView: React.FC<SupervisorViewProps> = ({
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3.5">
             <div
               onClick={() => setStatusFilter(statusFilter === 'submitted' ? 'all' : 'submitted')}
-              className={`p-4 rounded-xl border cursor-pointer transition-all ${
+              className={`p-4 rounded-2xl border cursor-pointer transition-all shadow-2xs ${
                 statusFilter === 'submitted'
-                  ? 'bg-amber-50 border-amber-400 ring-2 ring-amber-300'
-                  : 'bg-white border-slate-200 hover:border-amber-300'
+                  ? 'bg-amber-50 dark:bg-amber-950/40 border-amber-400 dark:border-amber-700 ring-2 ring-amber-300 dark:ring-amber-500/40'
+                  : 'bg-white dark:bg-slate-900 border-slate-200/80 dark:border-slate-800 hover:border-amber-300'
               }`}
             >
-              <span className="text-[11px] font-bold uppercase tracking-wider text-amber-700">
+              <span className="text-[10px] font-bold uppercase tracking-wider text-amber-700 dark:text-amber-400">
                 1. New Submissions
               </span>
               <div className="flex items-baseline justify-between mt-2">
-                <span className="text-2xl font-black text-slate-900">{submittedCount}</span>
-                <span className="text-xs text-slate-500">Needs Triage</span>
+                <span className="text-2xl font-black font-mono tabular-nums text-slate-900 dark:text-white">
+                  {submittedCount}
+                </span>
+                <span className="text-xs text-slate-500 dark:text-slate-400">Needs Triage</span>
               </div>
             </div>
 
             <div
               onClick={() => setStatusFilter(statusFilter === 'verified' ? 'all' : 'verified')}
-              className={`p-4 rounded-xl border cursor-pointer transition-all ${
+              className={`p-4 rounded-2xl border cursor-pointer transition-all shadow-2xs ${
                 statusFilter === 'verified'
-                  ? 'bg-blue-50 border-blue-400 ring-2 ring-blue-300'
-                  : 'bg-white border-slate-200 hover:border-blue-300'
+                  ? 'bg-blue-50 dark:bg-blue-950/40 border-blue-400 dark:border-blue-700 ring-2 ring-blue-300 dark:ring-blue-500/40'
+                  : 'bg-white dark:bg-slate-900 border-slate-200/80 dark:border-slate-800 hover:border-blue-300'
               }`}
             >
-              <span className="text-[11px] font-bold uppercase tracking-wider text-blue-700">
+              <span className="text-[10px] font-bold uppercase tracking-wider text-blue-700 dark:text-blue-400">
                 2. Verified
               </span>
               <div className="flex items-baseline justify-between mt-2">
-                <span className="text-2xl font-black text-slate-900">{verifiedCount}</span>
-                <span className="text-xs text-slate-500">Assign Cleaner</span>
+                <span className="text-2xl font-black font-mono tabular-nums text-slate-900 dark:text-white">
+                  {verifiedCount}
+                </span>
+                <span className="text-xs text-slate-500 dark:text-slate-400">Assign Cleaner</span>
               </div>
             </div>
 
             <div
               onClick={() => setStatusFilter(statusFilter === 'in_progress' ? 'all' : 'in_progress')}
-              className={`p-4 rounded-xl border cursor-pointer transition-all ${
+              className={`p-4 rounded-2xl border cursor-pointer transition-all shadow-2xs ${
                 statusFilter === 'in_progress'
-                  ? 'bg-purple-50 border-purple-400 ring-2 ring-purple-300'
-                  : 'bg-white border-slate-200 hover:border-purple-300'
+                  ? 'bg-purple-50 dark:bg-purple-950/40 border-purple-400 dark:border-purple-700 ring-2 ring-purple-300 dark:ring-purple-500/40'
+                  : 'bg-white dark:bg-slate-900 border-slate-200/80 dark:border-slate-800 hover:border-purple-300'
               }`}
             >
-              <span className="text-[11px] font-bold uppercase tracking-wider text-purple-700">
+              <span className="text-[10px] font-bold uppercase tracking-wider text-purple-700 dark:text-purple-400">
                 3. In Progress
               </span>
               <div className="flex items-baseline justify-between mt-2">
-                <span className="text-2xl font-black text-slate-900">{inProgressCount}</span>
-                <span className="text-xs text-slate-500">On-Site Work</span>
+                <span className="text-2xl font-black font-mono tabular-nums text-slate-900 dark:text-white">
+                  {inProgressCount}
+                </span>
+                <span className="text-xs text-slate-500 dark:text-slate-400">On-Site Work</span>
               </div>
             </div>
 
@@ -341,49 +349,53 @@ export const SupervisorView: React.FC<SupervisorViewProps> = ({
                   statusFilter === 'awaiting_verification' ? 'all' : 'awaiting_verification'
                 )
               }
-              className={`p-4 rounded-xl border cursor-pointer transition-all ${
+              className={`p-4 rounded-2xl border cursor-pointer transition-all shadow-2xs ${
                 statusFilter === 'awaiting_verification'
-                  ? 'bg-orange-50 border-orange-400 ring-2 ring-orange-300'
-                  : 'bg-white border-slate-200 hover:border-orange-300'
+                  ? 'bg-orange-50 dark:bg-orange-950/40 border-orange-400 dark:border-orange-700 ring-2 ring-orange-300 dark:ring-orange-500/40'
+                  : 'bg-white dark:bg-slate-900 border-slate-200/80 dark:border-slate-800 hover:border-orange-300'
               }`}
             >
-              <span className="text-[11px] font-bold uppercase tracking-wider text-orange-700">
-                4. Completion Review
+              <span className="text-[10px] font-bold uppercase tracking-wider text-orange-700 dark:text-orange-400">
+                4. Audit Proof
               </span>
               <div className="flex items-baseline justify-between mt-2">
-                <span className="text-2xl font-black text-slate-900">{awaitingVerificationCount}</span>
-                <span className="text-xs text-slate-500">Audit Photos</span>
+                <span className="text-2xl font-black font-mono tabular-nums text-slate-900 dark:text-white">
+                  {awaitingVerificationCount}
+                </span>
+                <span className="text-xs text-slate-500 dark:text-slate-400">Review Photos</span>
               </div>
             </div>
 
             <div
               onClick={() => setStatusFilter(statusFilter === 'completed' ? 'all' : 'completed')}
-              className={`p-4 rounded-xl border cursor-pointer transition-all col-span-2 sm:col-span-1 ${
+              className={`p-4 rounded-2xl border cursor-pointer transition-all col-span-2 sm:col-span-1 shadow-2xs ${
                 statusFilter === 'completed'
-                  ? 'bg-emerald-50 border-emerald-400 ring-2 ring-emerald-300'
-                  : 'bg-white border-slate-200 hover:border-emerald-300'
+                  ? 'bg-emerald-50 dark:bg-emerald-950/40 border-emerald-400 dark:border-emerald-700 ring-2 ring-emerald-300 dark:ring-emerald-500/40'
+                  : 'bg-white dark:bg-slate-900 border-slate-200/80 dark:border-slate-800 hover:border-emerald-300'
               }`}
             >
-              <span className="text-[11px] font-bold uppercase tracking-wider text-emerald-700">
+              <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-700 dark:text-emerald-400">
                 5. Completed
               </span>
               <div className="flex items-baseline justify-between mt-2">
-                <span className="text-2xl font-black text-slate-900">{completedCount}</span>
-                <span className="text-xs text-slate-500">Signed Off</span>
+                <span className="text-2xl font-black font-mono tabular-nums text-slate-900 dark:text-white">
+                  {completedCount}
+                </span>
+                <span className="text-xs text-slate-500 dark:text-slate-400">Signed Off</span>
               </div>
             </div>
           </div>
 
           {/* Operational Toolbar */}
-          <div className="bg-white p-4 rounded-2xl border border-slate-200 flex flex-wrap items-center justify-between gap-3 shadow-xs">
+          <div className="bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-200/80 dark:border-slate-800 flex flex-wrap items-center justify-between gap-3 shadow-2xs">
             <div className="relative flex-1 min-w-[240px]">
-              <Search className="w-4 h-4 text-slate-400 absolute left-3 top-3" />
+              <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-3" />
               <input
                 type="text"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 placeholder="Search tracking code, resident phone, address, or name..."
-                className="w-full pl-9 pr-4 py-2 rounded-xl border border-slate-300 bg-slate-50 text-xs focus:ring-2 focus:ring-emerald-500 focus:outline-none"
+                className="w-full pl-10 pr-4 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 text-xs focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 focus:outline-none transition-colors"
               />
             </div>
 
@@ -391,7 +403,7 @@ export const SupervisorView: React.FC<SupervisorViewProps> = ({
               <select
                 value={statusFilter}
                 onChange={(e) => setStatusFilter(e.target.value)}
-                className="px-3 py-2 rounded-xl border border-slate-300 bg-slate-50 text-xs font-medium"
+                className="px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-slate-100 text-xs font-medium cursor-pointer"
               >
                 <option value="all">All Statuses ({complaints.length})</option>
                 <option value="submitted">1. Submitted ({submittedCount})</option>
@@ -408,7 +420,7 @@ export const SupervisorView: React.FC<SupervisorViewProps> = ({
               <select
                 value={localityFilter}
                 onChange={(e) => setLocalityFilter(e.target.value)}
-                className="px-3 py-2 rounded-xl border border-slate-300 bg-slate-50 text-xs font-medium"
+                className="px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-slate-100 text-xs font-medium cursor-pointer"
               >
                 <option value="all">All Localities</option>
                 {localities.map((loc) => (
@@ -421,7 +433,7 @@ export const SupervisorView: React.FC<SupervisorViewProps> = ({
               <select
                 value={urgencyFilter}
                 onChange={(e) => setUrgencyFilter(e.target.value)}
-                className="px-3 py-2 rounded-xl border border-slate-300 bg-slate-50 text-xs font-medium"
+                className="px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-slate-100 text-xs font-medium cursor-pointer"
               >
                 <option value="all">All Urgency</option>
                 <option value="critical">Critical</option>
@@ -438,7 +450,7 @@ export const SupervisorView: React.FC<SupervisorViewProps> = ({
                     setUrgencyFilter('all');
                     setSearchQuery('');
                   }}
-                  className="p-2 text-slate-400 hover:text-slate-600"
+                  className="p-2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 cursor-pointer rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800"
                   title="Reset Filters"
                 >
                   <RotateCcw className="w-4 h-4" />
@@ -447,20 +459,20 @@ export const SupervisorView: React.FC<SupervisorViewProps> = ({
             </div>
           </div>
 
-          {/* Complaints Table / List */}
+          {/* Complaints Table */}
           {filteredComplaints.length === 0 ? (
-            <div className="p-12 text-center bg-white rounded-2xl border border-slate-200">
-              <ClipboardList className="w-12 h-12 text-slate-300 mx-auto mb-3" />
-              <h3 className="text-base font-bold text-slate-800">No Complaints Match Filters</h3>
-              <p className="text-xs text-slate-500 mt-1">
-                There are no complaints under this status or locality filter.
+            <div className="p-12 text-center bg-white dark:bg-slate-900 rounded-3xl border border-slate-200/80 dark:border-slate-800 shadow-sm space-y-3">
+              <ClipboardList className="w-12 h-12 text-slate-300 dark:text-slate-600 mx-auto" />
+              <h3 className="text-base font-bold text-slate-800 dark:text-slate-200">No Complaints Match Filters</h3>
+              <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 max-w-sm mx-auto">
+                There are no complaints under this status or locality filter. Try adjusting your search query.
               </p>
             </div>
           ) : (
-            <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-xs">
+            <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200/80 dark:border-slate-800 overflow-hidden shadow-2xs">
               <div className="overflow-x-auto">
                 <table className="w-full text-left text-xs">
-                  <thead className="bg-slate-50 text-slate-600 font-bold border-b border-slate-200 uppercase text-[10px] tracking-wider">
+                  <thead className="bg-slate-50 dark:bg-slate-800/60 text-slate-600 dark:text-slate-400 font-bold border-b border-slate-200 dark:border-slate-800 uppercase text-[10px] tracking-wider">
                     <tr>
                       <th className="py-3 px-4">Tracking & Locality</th>
                       <th className="py-3 px-4">Resident Info</th>
@@ -470,31 +482,31 @@ export const SupervisorView: React.FC<SupervisorViewProps> = ({
                       <th className="py-3 px-4 text-right">Workflow Action</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-slate-100">
+                  <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
                     {filteredComplaints.map((c) => {
                       const initialPhoto = c.photos.find((p) => p.photoType === 'resident_initial');
                       const completionPhoto = c.photos.find((p) => p.photoType === 'cleaner_completion');
 
                       return (
-                        <tr key={c.id} className="hover:bg-slate-50/70 transition-colors">
+                        <tr key={c.id} className="hover:bg-slate-50/70 dark:hover:bg-slate-800/40 transition-colors">
                           <td className="py-3.5 px-4">
-                            <span className="font-mono font-bold text-slate-900 block">
+                            <span className="font-mono font-bold text-slate-900 dark:text-white block">
                               {c.trackingCode}
                             </span>
-                            <span className="text-slate-500 flex items-center gap-1 mt-0.5">
+                            <span className="text-slate-500 dark:text-slate-400 flex items-center gap-1 mt-0.5">
                               <MapPin className="w-3 h-3 text-slate-400" />
                               {c.localityName}
                             </span>
-                            <span className="text-[11px] text-slate-400 block truncate max-w-xs">
+                            <span className="text-[11px] text-slate-400 dark:text-slate-500 block truncate max-w-xs">
                               {c.address}
                             </span>
                           </td>
 
                           <td className="py-3.5 px-4">
-                            <span className="font-semibold text-slate-800 block">{c.residentName}</span>
+                            <span className="font-semibold text-slate-800 dark:text-slate-200 block">{c.residentName}</span>
                             <a
                               href={`tel:${c.residentPhone}`}
-                              className="text-emerald-700 hover:underline flex items-center gap-1 font-mono text-[11px] mt-0.5"
+                              className="text-emerald-700 dark:text-emerald-400 hover:underline flex items-center gap-1 font-mono text-[11px] mt-0.5"
                             >
                               <PhoneCall className="w-3 h-3" /> {c.residentPhone}
                             </a>
@@ -511,12 +523,12 @@ export const SupervisorView: React.FC<SupervisorViewProps> = ({
 
                           <td className="py-3.5 px-4">
                             {c.assignedCleanerName ? (
-                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-amber-50 text-amber-800 font-semibold border border-amber-200">
-                                <HardHat className="w-3 h-3 text-amber-600" />
+                              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-lg bg-amber-50 dark:bg-amber-950/50 text-amber-800 dark:text-amber-300 font-semibold border border-amber-200 dark:border-amber-800">
+                                <HardHat className="w-3 h-3 text-amber-600 dark:text-amber-400" />
                                 {c.assignedCleanerName}
                               </span>
                             ) : (
-                              <span className="text-slate-400 italic">Unassigned</span>
+                              <span className="text-slate-400 dark:text-slate-500 italic">Unassigned</span>
                             )}
                           </td>
 
@@ -526,7 +538,7 @@ export const SupervisorView: React.FC<SupervisorViewProps> = ({
                                 <img
                                   src={initialPhoto.url}
                                   alt="Initial"
-                                  className="w-8 h-8 rounded-lg object-cover border border-slate-200 cursor-pointer"
+                                  className="w-9 h-9 rounded-lg object-cover border border-slate-200 dark:border-slate-700 cursor-pointer hover:opacity-80 transition-opacity"
                                   onClick={() => handleOpenAction(c, 'details')}
                                   title="Initial Resident Photo"
                                 />
@@ -535,7 +547,7 @@ export const SupervisorView: React.FC<SupervisorViewProps> = ({
                                 <img
                                   src={completionPhoto.url}
                                   alt="Completion"
-                                  className="w-8 h-8 rounded-lg object-cover border border-emerald-300 ring-1 ring-emerald-400 cursor-pointer"
+                                  className="w-9 h-9 rounded-lg object-cover border border-emerald-300 dark:border-emerald-700 ring-1 ring-emerald-400 cursor-pointer hover:opacity-80 transition-opacity"
                                   onClick={() => handleOpenAction(c, 'review')}
                                   title="Cleaner Completion Photo"
                                 />
@@ -543,37 +555,40 @@ export const SupervisorView: React.FC<SupervisorViewProps> = ({
                             </div>
                           </td>
 
-                          <td className="py-3.5 px-4 text-right space-x-1">
+                          <td className="py-3.5 px-4 text-right space-x-1 whitespace-nowrap">
                             {c.status === 'submitted' && (
                               <button
                                 onClick={() => handleOpenAction(c, 'verify')}
-                                className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-xs cursor-pointer inline-flex items-center gap-1"
+                                className="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-xs cursor-pointer inline-flex items-center gap-1 transition-all"
                               >
-                                <UserCheck className="w-3.5 h-3.5" /> Verify
+                                <UserCheck className="w-3.5 h-3.5" />
+                                <span>Verify</span>
                               </button>
                             )}
 
                             {c.status === 'verified' && (
                               <button
                                 onClick={() => handleOpenAction(c, 'assign')}
-                                className="px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs shadow-xs cursor-pointer inline-flex items-center gap-1"
+                                className="px-3 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs shadow-xs cursor-pointer inline-flex items-center gap-1 transition-all"
                               >
-                                <HardHat className="w-3.5 h-3.5" /> Assign
+                                <HardHat className="w-3.5 h-3.5" />
+                                <span>Assign</span>
                               </button>
                             )}
 
                             {c.status === 'awaiting_verification' && (
                               <button
                                 onClick={() => handleOpenAction(c, 'review')}
-                                className="px-3 py-1.5 rounded-lg bg-orange-600 hover:bg-orange-700 text-white font-bold text-xs shadow-xs cursor-pointer inline-flex items-center gap-1"
+                                className="px-3 py-1.5 rounded-xl bg-orange-600 hover:bg-orange-700 text-white font-bold text-xs shadow-xs cursor-pointer inline-flex items-center gap-1 transition-all"
                               >
-                                <FileCheck className="w-3.5 h-3.5" /> Review Proof
+                                <FileCheck className="w-3.5 h-3.5" />
+                                <span>Review Proof</span>
                               </button>
                             )}
 
                             <button
                               onClick={() => handleOpenAction(c, 'details')}
-                              className="px-2.5 py-1.5 rounded-lg border border-slate-300 hover:bg-slate-100 text-slate-700 font-semibold text-xs cursor-pointer"
+                              className="px-2.5 py-1.5 rounded-xl border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 font-semibold text-xs cursor-pointer transition-colors"
                             >
                               Details
                             </button>
@@ -592,22 +607,24 @@ export const SupervisorView: React.FC<SupervisorViewProps> = ({
       {/* VIEW MODE: MY ASSIGNED CLEANERS */}
       {viewMode === 'my_cleaners' && (
         <div className="space-y-4">
-          <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs flex items-center justify-between">
+          <div className="bg-white dark:bg-slate-900 p-5 sm:p-6 rounded-3xl border border-slate-200/80 dark:border-slate-800 shadow-sm flex items-center justify-between">
             <div>
-              <h3 className="text-base font-bold text-slate-900">
+              <h3 className="text-base font-bold text-slate-900 dark:text-white">
                 My Operational Cleaners Team ({myCleaners.length})
               </h3>
-              <p className="text-xs text-slate-500 mt-0.5">
+              <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
                 Cleaners assigned directly to your supervisory operational scope by the municipal administrator.
               </p>
             </div>
           </div>
 
           {myCleaners.length === 0 ? (
-            <div className="p-12 text-center bg-white rounded-2xl border border-slate-200 shadow-xs">
-              <UserCheck className="w-12 h-12 text-slate-300 mx-auto mb-3" />
-              <h4 className="text-base font-bold text-slate-800">No Cleaners Assigned to Your Team Yet</h4>
-              <p className="text-xs text-slate-500 mt-1 max-w-md mx-auto">
+            <div className="p-12 text-center bg-white dark:bg-slate-900 rounded-3xl border border-slate-200/80 dark:border-slate-800 shadow-sm space-y-3">
+              <UserCheck className="w-12 h-12 text-slate-300 dark:text-slate-600 mx-auto" />
+              <h4 className="text-base font-bold text-slate-800 dark:text-slate-200">
+                No Cleaners Assigned to Your Team Yet
+              </h4>
+              <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 max-w-md mx-auto leading-relaxed">
                 Municipal administrators assign certified cleaners to supervisors upon application review or account provisioning. Contact your administrator to assign cleaners to your team.
               </p>
             </div>
@@ -630,51 +647,51 @@ export const SupervisorView: React.FC<SupervisorViewProps> = ({
                 return (
                   <div
                     key={cleaner.id}
-                    className="bg-white border border-slate-200 rounded-2xl p-5 shadow-xs space-y-4"
+                    className="bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 rounded-2xl p-5 shadow-2xs space-y-4"
                   >
                     <div className="flex items-start justify-between">
-                      <div className="flex items-center gap-2">
-                        <span className="w-8 h-8 rounded-xl bg-amber-100 text-amber-800 flex items-center justify-center font-bold text-xs">
+                      <div className="flex items-center gap-2.5">
+                        <span className="w-9 h-9 rounded-xl bg-amber-100 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300 flex items-center justify-center font-bold text-xs">
                           {cleaner.fullName.charAt(0)}
                         </span>
                         <div>
-                          <h4 className="font-bold text-sm text-slate-900">{cleaner.fullName}</h4>
-                          <p className="text-xs text-slate-500 font-mono">{cleaner.email}</p>
+                          <h4 className="font-bold text-sm text-slate-900 dark:text-white">{cleaner.fullName}</h4>
+                          <p className="text-xs text-slate-500 dark:text-slate-400 font-mono">{cleaner.email}</p>
                         </div>
                       </div>
                       <span
-                        className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider border ${
+                        className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider border ${
                           cleaner.accountStatus === 'active'
-                            ? 'bg-emerald-50 text-emerald-800 border-emerald-300'
-                            : 'bg-rose-50 text-rose-800 border-rose-300'
+                            ? 'bg-emerald-50 dark:bg-emerald-950/50 text-emerald-800 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800'
+                            : 'bg-rose-50 dark:bg-rose-950/50 text-rose-800 dark:text-rose-300 border-rose-200 dark:border-rose-800'
                         }`}
                       >
                         {cleaner.accountStatus}
                       </span>
                     </div>
 
-                    <div className="text-xs text-slate-600">
-                      <span className="text-slate-400">Phone: </span>
-                      <span className="font-medium">{cleaner.phoneNumber}</span>
+                    <div className="text-xs text-slate-600 dark:text-slate-300">
+                      <span className="text-slate-400 dark:text-slate-500">Phone: </span>
+                      <span className="font-medium font-mono">{cleaner.phoneNumber}</span>
                     </div>
 
                     {/* Authorized Localities */}
-                    <div className="space-y-1 text-xs">
-                      <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">
+                    <div className="space-y-1.5 text-xs">
+                      <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500 block">
                         Authorized Service Localities:
                       </span>
-                      <div className="flex flex-wrap gap-1">
+                      <div className="flex flex-wrap gap-1.5">
                         {cleanerServiceAreas.length > 0 ? (
                           cleanerServiceAreas.map((sa) => (
                             <span
                               key={sa.localityId}
-                              className="px-2 py-0.5 rounded-md text-[10px] font-semibold bg-emerald-50 border border-emerald-200 text-emerald-800"
+                              className="px-2.5 py-0.5 rounded-lg text-[10px] font-semibold bg-emerald-50 dark:bg-emerald-950/50 border border-emerald-200 dark:border-emerald-800 text-emerald-800 dark:text-emerald-300"
                             >
                               {sa.localityName}
                             </span>
                           ))
                         ) : (
-                          <span className="text-amber-700 italic text-[11px]">
+                          <span className="text-amber-700 dark:text-amber-400 italic text-[11px]">
                             No service areas approved yet
                           </span>
                         )}
@@ -682,18 +699,24 @@ export const SupervisorView: React.FC<SupervisorViewProps> = ({
                     </div>
 
                     {/* Work Assignment Counters */}
-                    <div className="grid grid-cols-3 gap-2 pt-2 border-t border-slate-100 text-center">
-                      <div className="p-2 bg-slate-50 rounded-xl">
-                        <span className="text-sm font-black text-slate-800">{assignedTasks.length}</span>
+                    <div className="grid grid-cols-3 gap-2 pt-2 border-t border-slate-100 dark:border-slate-800 text-center">
+                      <div className="p-2 bg-slate-50 dark:bg-slate-800/60 rounded-xl">
+                        <span className="text-sm font-black font-mono tabular-nums text-slate-800 dark:text-slate-200">
+                          {assignedTasks.length}
+                        </span>
                         <p className="text-[9px] uppercase font-bold text-slate-400">Assigned</p>
                       </div>
-                      <div className="p-2 bg-purple-50 rounded-xl">
-                        <span className="text-sm font-black text-purple-800">{inProgressTasks.length}</span>
-                        <p className="text-[9px] uppercase font-bold text-purple-600">In Progress</p>
+                      <div className="p-2 bg-purple-50 dark:bg-purple-950/50 rounded-xl">
+                        <span className="text-sm font-black font-mono tabular-nums text-purple-800 dark:text-purple-300">
+                          {inProgressTasks.length}
+                        </span>
+                        <p className="text-[9px] uppercase font-bold text-purple-600 dark:text-purple-400">In Progress</p>
                       </div>
-                      <div className="p-2 bg-emerald-50 rounded-xl">
-                        <span className="text-sm font-black text-emerald-800">{completedTasks.length}</span>
-                        <p className="text-[9px] uppercase font-bold text-emerald-600">Completed</p>
+                      <div className="p-2 bg-emerald-50 dark:bg-emerald-950/50 rounded-xl">
+                        <span className="text-sm font-black font-mono tabular-nums text-emerald-800 dark:text-emerald-300">
+                          {completedTasks.length}
+                        </span>
+                        <p className="text-[9px] uppercase font-bold text-emerald-600 dark:text-emerald-400">Completed</p>
                       </div>
                     </div>
                   </div>
@@ -707,22 +730,22 @@ export const SupervisorView: React.FC<SupervisorViewProps> = ({
       {/* VIEW MODE 2: CLEANER APPLICATIONS REVIEW */}
       {viewMode === 'cleaners' && (
         <div className="space-y-6">
-          <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-xs space-y-4">
+          <div className="bg-white dark:bg-slate-900 p-6 sm:p-8 rounded-3xl border border-slate-200/80 dark:border-slate-800 shadow-sm space-y-4">
             <div>
-              <h3 className="text-base font-bold text-slate-900">
+              <h3 className="text-base font-bold text-slate-900 dark:text-white">
                 Cleaner Applications Awaiting Supervisor Review
               </h3>
-              <p className="text-xs text-slate-500 mt-1">
+              <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
                 Review applicant identity, verify preferred service localities, and authorize or reject their municipal cleaner credential.
               </p>
             </div>
 
             {appReviewMsg && (
               <div
-                className={`p-3 rounded-xl border text-xs flex items-center gap-2 ${
+                className={`p-3.5 rounded-2xl border text-xs flex items-center gap-2.5 ${
                   appReviewMsg.error
-                    ? 'bg-rose-50 border-rose-300 text-rose-800'
-                    : 'bg-emerald-50 border-emerald-300 text-emerald-800'
+                    ? 'bg-rose-50 dark:bg-rose-950/40 border-rose-200 dark:border-rose-800 text-rose-800 dark:text-rose-200'
+                    : 'bg-emerald-50 dark:bg-emerald-950/40 border-emerald-200 dark:border-emerald-800 text-emerald-800 dark:text-emerald-200'
                 }`}
               >
                 {appReviewMsg.error ? (
@@ -735,9 +758,9 @@ export const SupervisorView: React.FC<SupervisorViewProps> = ({
             )}
 
             {cleanerApplications.length === 0 ? (
-              <div className="p-8 text-center bg-slate-50 rounded-xl border border-slate-200">
-                <HardHat className="w-10 h-10 text-slate-300 mx-auto mb-2" />
-                <p className="text-xs text-slate-500 font-medium">
+              <div className="p-12 text-center bg-slate-50 dark:bg-slate-800/40 rounded-2xl border border-slate-200 dark:border-slate-800 space-y-2">
+                <HardHat className="w-10 h-10 text-slate-300 dark:text-slate-600 mx-auto" />
+                <p className="text-xs text-slate-500 dark:text-slate-400 font-medium">
                   No cleaner applications currently in the system.
                 </p>
               </div>
@@ -752,27 +775,27 @@ export const SupervisorView: React.FC<SupervisorViewProps> = ({
                   return (
                     <div
                       key={app.id}
-                      className={`p-5 rounded-2xl border flex flex-col justify-between space-y-4 ${
+                      className={`p-5 rounded-2xl border flex flex-col justify-between space-y-4 shadow-2xs ${
                         app.status === 'pending'
-                          ? 'bg-white border-amber-300 shadow-xs ring-1 ring-amber-200'
+                          ? 'bg-white dark:bg-slate-900 border-amber-300 dark:border-amber-700/80 ring-1 ring-amber-200 dark:ring-amber-800/50'
                           : app.status === 'approved'
-                          ? 'bg-emerald-50/40 border-emerald-200'
-                          : 'bg-rose-50/40 border-rose-200'
+                          ? 'bg-emerald-50/40 dark:bg-emerald-950/20 border-emerald-200 dark:border-emerald-800/80'
+                          : 'bg-rose-50/40 dark:bg-rose-950/20 border-rose-200 dark:border-rose-800/80'
                       }`}
                     >
                       <div className="space-y-3">
                         <div className="flex items-start justify-between">
                           <div>
-                            <h4 className="font-bold text-sm text-slate-900">{app.cleanerName}</h4>
-                            <p className="text-xs text-slate-500">{app.cleanerEmail}</p>
+                            <h4 className="font-bold text-sm text-slate-900 dark:text-white">{app.cleanerName}</h4>
+                            <p className="text-xs text-slate-500 dark:text-slate-400 font-mono">{app.cleanerEmail}</p>
                           </div>
                           <span
                             className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider ${
                               app.status === 'approved'
-                                ? 'bg-emerald-100 text-emerald-800 border border-emerald-300'
+                                ? 'bg-emerald-100 dark:bg-emerald-950/70 text-emerald-800 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800'
                                 : app.status === 'rejected'
-                                ? 'bg-rose-100 text-rose-800 border border-rose-300'
-                                : 'bg-amber-100 text-amber-800 border border-amber-300'
+                                ? 'bg-rose-100 dark:bg-rose-950/70 text-rose-800 dark:text-rose-300 border border-rose-300 dark:border-rose-800'
+                                : 'bg-amber-100 dark:bg-amber-950/70 text-amber-800 dark:text-amber-300 border border-amber-300 dark:border-amber-800'
                             }`}
                           >
                             {app.status}
@@ -780,8 +803,8 @@ export const SupervisorView: React.FC<SupervisorViewProps> = ({
                         </div>
 
                         {/* Preferred Localities */}
-                        <div className="space-y-1">
-                          <label className="text-[11px] font-bold text-slate-700 block">
+                        <div className="space-y-1.5">
+                          <label className="text-[11px] font-bold text-slate-700 dark:text-slate-300 block">
                             Preferred Municipal Service Localities:
                           </label>
                           <div className="flex flex-wrap gap-1.5">
@@ -796,14 +819,14 @@ export const SupervisorView: React.FC<SupervisorViewProps> = ({
                                     handleToggleLocalityForApp(app.cleanerId, sa.localityId)
                                   }
                                   disabled={app.status !== 'pending'}
-                                  className={`px-2.5 py-1 rounded-lg text-xs font-semibold flex items-center gap-1 border transition-all ${
+                                  className={`px-2.5 py-1 rounded-xl text-xs font-semibold flex items-center gap-1 border transition-all cursor-pointer ${
                                     isChecked
-                                      ? 'bg-emerald-600 text-white border-emerald-700'
-                                      : 'bg-white text-slate-700 border-slate-300'
+                                      ? 'bg-emerald-600 text-white border-emerald-700 shadow-2xs'
+                                      : 'bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 border-slate-300 dark:border-slate-700'
                                   }`}
                                 >
                                   {isChecked && <Check className="w-3 h-3" />}
-                                  {sa.localityName}
+                                  <span>{sa.localityName}</span>
                                 </button>
                               );
                             })}
@@ -813,7 +836,7 @@ export const SupervisorView: React.FC<SupervisorViewProps> = ({
                         {/* Review Notes */}
                         {app.status === 'pending' ? (
                           <div className="space-y-1">
-                            <label className="text-[11px] font-bold text-slate-700 block">
+                            <label className="text-[11px] font-bold text-slate-700 dark:text-slate-300 block">
                               Supervisor Review Notes (Optional):
                             </label>
                             <input
@@ -823,12 +846,12 @@ export const SupervisorView: React.FC<SupervisorViewProps> = ({
                                 setCleanerAppNotes((prev) => ({ ...prev, [app.id]: e.target.value }))
                               }
                               placeholder="e.g. Identity and residency verified."
-                              className="w-full px-3 py-1.5 rounded-xl border border-slate-300 text-xs bg-white text-slate-900"
+                              className="w-full px-3.5 py-2 rounded-xl border border-slate-300 dark:border-slate-700 text-xs bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 focus:outline-hidden transition-colors"
                             />
                           </div>
                         ) : (
                           app.reviewNotes && (
-                            <p className="text-xs text-slate-600 bg-white/70 p-2 rounded-lg border border-slate-200">
+                            <p className="text-xs text-slate-600 dark:text-slate-300 bg-white/70 dark:bg-slate-800/70 p-2.5 rounded-xl border border-slate-200 dark:border-slate-700">
                               <span className="font-bold">Supervisor Note:</span> {app.reviewNotes}
                             </p>
                           )
@@ -837,18 +860,19 @@ export const SupervisorView: React.FC<SupervisorViewProps> = ({
 
                       {/* Action buttons if pending */}
                       {app.status === 'pending' && (
-                        <div className="flex items-center gap-2 pt-2 border-t border-slate-200">
+                        <div className="flex items-center gap-2 pt-2 border-t border-slate-200 dark:border-slate-700">
                           <button
                             type="button"
                             onClick={() => handleReviewCleanerApp(app, 'approved')}
-                            className="flex-1 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold shadow-xs transition-colors cursor-pointer flex items-center justify-center gap-1.5"
+                            className="flex-1 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold shadow-xs transition-colors cursor-pointer flex items-center justify-center gap-1.5"
                           >
-                            <CheckCircle2 className="w-3.5 h-3.5" /> Approve Application
+                            <CheckCircle2 className="w-3.5 h-3.5" />
+                            <span>Approve Application</span>
                           </button>
                           <button
                             type="button"
                             onClick={() => handleReviewCleanerApp(app, 'rejected')}
-                            className="py-2 px-4 rounded-xl border border-rose-300 text-rose-700 hover:bg-rose-50 text-xs font-bold transition-colors cursor-pointer"
+                            className="py-2.5 px-4 rounded-xl border border-rose-300 dark:border-rose-700 text-rose-700 dark:text-rose-300 hover:bg-rose-50 dark:hover:bg-rose-950/40 text-xs font-bold transition-colors cursor-pointer"
                           >
                             Reject
                           </button>
@@ -865,36 +889,39 @@ export const SupervisorView: React.FC<SupervisorViewProps> = ({
 
       {/* COMPLAINT MODAL */}
       {selectedComplaint && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in overflow-y-auto">
-          <div className="bg-white border border-slate-200 rounded-2xl w-full max-w-2xl p-6 shadow-xl space-y-5 my-8">
-            <div className="flex items-start justify-between">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-xs overflow-y-auto">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl w-full max-w-2xl max-h-[90vh] overflow-y-auto p-6 sm:p-7 shadow-2xl space-y-5 my-8 text-slate-900 dark:text-slate-100">
+            <div className="flex items-start justify-between gap-4">
               <div>
-                <div className="flex items-center gap-2">
-                  <span className="font-mono font-bold text-slate-900 text-base">
+                <div className="flex items-center gap-2 mb-1">
+                  <span className="font-mono font-bold text-slate-900 dark:text-white text-base">
                     {selectedComplaint.trackingCode}
                   </span>
                   <StatusBadge status={selectedComplaint.status} size="sm" />
                   <UrgencyBadge urgency={selectedComplaint.urgency} />
                 </div>
-                <p className="text-xs text-slate-500 mt-1">
+                <p className="text-xs text-slate-500 dark:text-slate-400">
                   {selectedComplaint.address} • {selectedComplaint.localityName}
                 </p>
               </div>
               <button
                 onClick={() => setSelectedComplaint(null)}
-                className="p-1 rounded-lg text-slate-400 hover:text-slate-600"
+                className="p-1.5 rounded-xl text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer shrink-0 transition-colors"
+                aria-label="Close modal"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
             {/* TAB SELECTOR IN MODAL */}
-            <div className="flex border-b border-slate-200 gap-4 text-xs font-bold">
+            <div className="flex border-b border-slate-200 dark:border-slate-800 gap-4 text-xs font-bold">
               {selectedComplaint.status === 'submitted' && (
                 <button
                   onClick={() => setActionTab('verify')}
-                  className={`pb-2 border-b-2 ${
-                    actionTab === 'verify' ? 'border-emerald-600 text-emerald-800' : 'text-slate-500'
+                  className={`pb-2.5 border-b-2 transition-colors cursor-pointer ${
+                    actionTab === 'verify'
+                      ? 'border-emerald-600 text-emerald-700 dark:text-emerald-400'
+                      : 'border-transparent text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
                   }`}
                 >
                   Verify Submission
@@ -903,8 +930,10 @@ export const SupervisorView: React.FC<SupervisorViewProps> = ({
               {selectedComplaint.status === 'verified' && (
                 <button
                   onClick={() => setActionTab('assign')}
-                  className={`pb-2 border-b-2 ${
-                    actionTab === 'assign' ? 'border-blue-600 text-blue-800' : 'text-slate-500'
+                  className={`pb-2.5 border-b-2 transition-colors cursor-pointer ${
+                    actionTab === 'assign'
+                      ? 'border-blue-600 text-blue-700 dark:text-blue-400'
+                      : 'border-transparent text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
                   }`}
                 >
                   Assign Cleaner
@@ -913,8 +942,10 @@ export const SupervisorView: React.FC<SupervisorViewProps> = ({
               {selectedComplaint.status === 'awaiting_verification' && (
                 <button
                   onClick={() => setActionTab('review')}
-                  className={`pb-2 border-b-2 ${
-                    actionTab === 'review' ? 'border-orange-600 text-orange-800' : 'text-slate-500'
+                  className={`pb-2.5 border-b-2 transition-colors cursor-pointer ${
+                    actionTab === 'review'
+                      ? 'border-orange-600 text-orange-700 dark:text-orange-400'
+                      : 'border-transparent text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
                   }`}
                 >
                   Audit Completion Proof
@@ -922,8 +953,10 @@ export const SupervisorView: React.FC<SupervisorViewProps> = ({
               )}
               <button
                 onClick={() => setActionTab('details')}
-                className={`pb-2 border-b-2 ${
-                  actionTab === 'details' ? 'border-slate-900 text-slate-900' : 'text-slate-500'
+                className={`pb-2.5 border-b-2 transition-colors cursor-pointer ${
+                  actionTab === 'details'
+                    ? 'border-slate-900 dark:border-white text-slate-900 dark:text-white'
+                    : 'border-transparent text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
                 }`}
               >
                 Details & History
@@ -933,38 +966,41 @@ export const SupervisorView: React.FC<SupervisorViewProps> = ({
             {/* ACTION 1: VERIFY */}
             {actionTab === 'verify' && (
               <div className="space-y-4 text-xs">
-                <div className="p-3.5 rounded-xl bg-blue-50 border border-blue-200 text-blue-900 space-y-2">
+                <div className="p-4 rounded-2xl bg-blue-50 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-800/80 text-blue-900 dark:text-blue-200 space-y-2 shadow-2xs">
                   <div className="flex items-center gap-2 font-bold">
-                    <PhoneCall className="w-4 h-4 text-blue-600" /> Resident Phone Contact Verification
+                    <PhoneCall className="w-4 h-4 text-blue-600 dark:text-blue-400" />
+                    <span>Resident Phone Contact Verification</span>
                   </div>
-                  <p>
+                  <p className="leading-relaxed">
                     Call resident <span className="font-semibold">{selectedComplaint.residentName}</span> at{' '}
                     <a
                       href={`tel:${selectedComplaint.residentPhone}`}
-                      className="font-mono font-bold underline text-blue-700"
+                      className="font-mono font-bold underline text-blue-700 dark:text-blue-400"
                     >
                       {selectedComplaint.residentPhone}
                     </a>{' '}
                     to confirm location accuracy before dispatch.
                   </p>
-                  <label className="flex items-center gap-2 pt-1 font-semibold text-blue-900 cursor-pointer">
+                  <label className="flex items-center gap-2 pt-1 font-semibold text-blue-900 dark:text-blue-200 cursor-pointer">
                     <input
                       type="checkbox"
                       checked={phoneConfirmed}
                       onChange={(e) => setPhoneConfirmed(e.target.checked)}
                       className="rounded text-blue-600"
                     />
-                    I confirm telephone contact was made with the resident.
+                    <span>I confirm telephone contact was made with the resident.</span>
                   </label>
                 </div>
 
                 <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <label className="block font-bold text-slate-700 mb-1">Set Urgency Level</label>
+                    <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1.5">
+                      Set Urgency Level
+                    </label>
                     <select
                       value={urgencySelection}
                       onChange={(e) => setUrgencySelection(e.target.value as UrgencyLevel)}
-                      className="w-full px-3 py-2 rounded-xl border border-slate-300 bg-white"
+                      className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100"
                     >
                       <option value="low">Low</option>
                       <option value="normal">Normal</option>
@@ -973,13 +1009,15 @@ export const SupervisorView: React.FC<SupervisorViewProps> = ({
                     </select>
                   </div>
                   <div>
-                    <label className="block font-bold text-slate-700 mb-1">Supervisor Notes</label>
+                    <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1.5">
+                      Supervisor Notes
+                    </label>
                     <input
                       type="text"
                       value={verifyNotes}
                       onChange={(e) => setVerifyNotes(e.target.value)}
                       placeholder="e.g. Verified by phone call."
-                      className="w-full px-3 py-2 rounded-xl border border-slate-300 bg-white"
+                      className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500"
                     />
                   </div>
                 </div>
@@ -987,13 +1025,14 @@ export const SupervisorView: React.FC<SupervisorViewProps> = ({
                 <div className="flex items-center gap-3 pt-2">
                   <button
                     onClick={handleVerify}
-                    className="flex-1 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold shadow-xs cursor-pointer flex items-center justify-center gap-1.5"
+                    className="flex-1 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold shadow-xs cursor-pointer flex items-center justify-center gap-2 transition-all"
                   >
-                    <CheckCircle2 className="w-4 h-4" /> Verify Complaint for Cleaner Dispatch
+                    <CheckCircle2 className="w-4 h-4" />
+                    <span>Verify Complaint for Cleaner Dispatch</span>
                   </button>
                   <button
                     onClick={() => setActionTab('reject')}
-                    className="py-2.5 px-4 rounded-xl border border-rose-300 text-rose-700 hover:bg-rose-50 font-bold cursor-pointer"
+                    className="py-3 px-4 rounded-xl border border-rose-300 dark:border-rose-700 text-rose-700 dark:text-rose-300 hover:bg-rose-50 dark:hover:bg-rose-950/40 font-bold cursor-pointer transition-colors"
                   >
                     Reject
                   </button>
@@ -1004,35 +1043,37 @@ export const SupervisorView: React.FC<SupervisorViewProps> = ({
             {/* ACTION: REJECT */}
             {actionTab === 'reject' && (
               <div className="space-y-4 text-xs">
-                <div className="p-3.5 rounded-xl bg-rose-50 border border-rose-200 text-rose-900 space-y-1.5">
+                <div className="p-4 rounded-2xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800 text-rose-900 dark:text-rose-200 space-y-1.5 shadow-2xs">
                   <span className="font-bold block">Reject Complaint</span>
-                  <p>
+                  <p className="leading-relaxed">
                     Provide a clear, mandatory reason why this complaint cannot be verified (e.g. unreachable resident, duplicate report, private property).
                   </p>
                 </div>
 
                 <div>
-                  <label className="block font-bold text-slate-700 mb-1">Rejection Reason *</label>
+                  <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1.5">
+                    Rejection Reason *
+                  </label>
                   <textarea
                     rows={3}
                     value={rejectionReason}
                     onChange={(e) => setRejectionReason(e.target.value)}
                     placeholder="Enter rejection reason (minimum 5 characters)..."
-                    className="w-full p-3 rounded-xl border border-slate-300 text-xs bg-white text-slate-900"
+                    className="w-full p-3.5 rounded-xl border border-slate-300 dark:border-slate-700 text-xs bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 focus:ring-2 focus:ring-rose-500/20 focus:border-rose-500 transition-colors"
                   />
-                  {rejectionError && <p className="text-rose-600 mt-1">{rejectionError}</p>}
+                  {rejectionError && <p className="text-rose-600 dark:text-rose-400 mt-1">{rejectionError}</p>}
                 </div>
 
                 <div className="flex items-center gap-3">
                   <button
                     onClick={handleReject}
-                    className="flex-1 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold shadow-xs cursor-pointer"
+                    className="flex-1 py-3 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold shadow-xs cursor-pointer transition-colors"
                   >
                     Confirm Rejection
                   </button>
                   <button
                     onClick={() => setActionTab('details')}
-                    className="py-2.5 px-4 rounded-xl border border-slate-300 text-slate-700 hover:bg-slate-50 font-semibold cursor-pointer"
+                    className="py-3 px-4 rounded-xl border border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 font-semibold cursor-pointer transition-colors"
                   >
                     Cancel
                   </button>
@@ -1043,7 +1084,7 @@ export const SupervisorView: React.FC<SupervisorViewProps> = ({
             {/* ACTION 2: ASSIGN CLEANER */}
             {actionTab === 'assign' && (
               <div className="space-y-4 text-xs">
-                <div className="p-3 rounded-xl bg-blue-50 border border-blue-200 text-blue-900 text-xs">
+                <div className="p-3.5 rounded-2xl bg-blue-50 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-800 text-blue-900 dark:text-blue-200 shadow-2xs">
                   <p>
                     Complaint Locality: <span className="font-bold">{selectedComplaint.localityName}</span>.
                     Only active cleaners authorized by supervisors for this locality are eligible for assignment.
@@ -1051,25 +1092,25 @@ export const SupervisorView: React.FC<SupervisorViewProps> = ({
                 </div>
 
                 {eligibleCleaners.length === 0 ? (
-                  <div className="p-4 rounded-xl bg-amber-50 border border-amber-300 text-amber-900 space-y-2">
+                  <div className="p-4 rounded-2xl bg-amber-50 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-800 text-amber-900 dark:text-amber-200 space-y-2 shadow-2xs">
                     <div className="flex items-center gap-2 font-bold">
-                      <AlertTriangle className="w-4 h-4 text-amber-600" /> No Authorized Cleaners for{' '}
-                      {selectedComplaint.localityName}
+                      <AlertTriangle className="w-4 h-4 text-amber-600 dark:text-amber-400" />
+                      <span>No Authorized Cleaners for {selectedComplaint.localityName}</span>
                     </div>
-                    <p>
+                    <p className="leading-relaxed">
                       There are currently no active cleaners with approved service coverage in this locality.
                       Go to the <span className="font-bold">Cleaner Applications</span> tab to approve cleaner locality coverage.
                     </p>
                   </div>
                 ) : (
                   <div>
-                    <label className="block font-bold text-slate-700 mb-1">
+                    <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1.5">
                       Select Approved Cleaner *
                     </label>
                     <select
                       value={selectedCleanerId}
                       onChange={(e) => setSelectedCleanerId(e.target.value)}
-                      className="w-full px-3 py-2 rounded-xl border border-slate-300 bg-white"
+                      className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100"
                     >
                       <option value="">-- Choose an eligible cleaner --</option>
                       {eligibleCleaners.map((cl) => (
@@ -1082,22 +1123,22 @@ export const SupervisorView: React.FC<SupervisorViewProps> = ({
                 )}
 
                 <div>
-                  <label className="block font-bold text-slate-700 mb-1">Dispatch Instructions</label>
+                  <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1.5">Dispatch Instructions</label>
                   <input
                     type="text"
                     value={assignNotes}
                     onChange={(e) => setAssignNotes(e.target.value)}
                     placeholder="e.g. Priority corner near bus stop."
-                    className="w-full px-3 py-2 rounded-xl border border-slate-300 bg-white"
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500"
                   />
                 </div>
 
-                {assignError && <p className="text-rose-600 text-xs">{assignError}</p>}
+                {assignError && <p className="text-rose-600 dark:text-rose-400 text-xs">{assignError}</p>}
 
                 <button
                   onClick={handleAssign}
                   disabled={eligibleCleaners.length === 0}
-                  className="w-full py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold shadow-xs cursor-pointer disabled:opacity-40"
+                  className="w-full py-3 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold shadow-xs cursor-pointer disabled:opacity-40 transition-colors"
                 >
                   Assign Cleaner
                 </button>
@@ -1109,8 +1150,8 @@ export const SupervisorView: React.FC<SupervisorViewProps> = ({
               <div className="space-y-4 text-xs">
                 <div className="grid grid-cols-2 gap-3">
                   {/* Initial Photo */}
-                  <div className="border border-slate-200 rounded-xl overflow-hidden bg-slate-50 p-2 space-y-1">
-                    <span className="font-bold text-slate-800 block text-[11px]">
+                  <div className="border border-slate-200 dark:border-slate-800 rounded-2xl overflow-hidden bg-slate-50 dark:bg-slate-800/50 p-2.5 space-y-1.5 shadow-2xs">
+                    <span className="font-bold text-slate-800 dark:text-slate-200 block text-[11px]">
                       1. Resident Initial Evidence
                     </span>
                     {selectedComplaint.photos.find((p) => p.photoType === 'resident_initial') ? (
@@ -1119,18 +1160,18 @@ export const SupervisorView: React.FC<SupervisorViewProps> = ({
                           selectedComplaint.photos.find((p) => p.photoType === 'resident_initial')!.url
                         }
                         alt="Initial"
-                        className="w-full h-40 object-cover rounded-lg border border-slate-200"
+                        className="w-full h-44 object-cover rounded-xl border border-slate-200 dark:border-slate-700"
                       />
                     ) : (
-                      <div className="h-40 flex items-center justify-center text-slate-400">
+                      <div className="h-44 flex items-center justify-center text-slate-400">
                         No initial photo
                       </div>
                     )}
                   </div>
 
                   {/* Cleaner After Photo */}
-                  <div className="border border-emerald-200 rounded-xl overflow-hidden bg-emerald-50/40 p-2 space-y-1">
-                    <span className="font-bold text-emerald-900 block text-[11px]">
+                  <div className="border border-emerald-200 dark:border-emerald-800 rounded-2xl overflow-hidden bg-emerald-50/40 dark:bg-emerald-950/20 p-2.5 space-y-1.5 shadow-2xs">
+                    <span className="font-bold text-emerald-900 dark:text-emerald-300 block text-[11px]">
                       2. Cleaner After-Cleaning Proof
                     </span>
                     {selectedComplaint.photos.find((p) => p.photoType === 'cleaner_completion') ? (
@@ -1139,10 +1180,10 @@ export const SupervisorView: React.FC<SupervisorViewProps> = ({
                           selectedComplaint.photos.find((p) => p.photoType === 'cleaner_completion')!.url
                         }
                         alt="Completion"
-                        className="w-full h-40 object-cover rounded-lg border border-emerald-300 ring-1 ring-emerald-400"
+                        className="w-full h-44 object-cover rounded-xl border border-emerald-300 dark:border-emerald-700 ring-1 ring-emerald-400"
                       />
                     ) : (
-                      <div className="h-40 flex items-center justify-center text-slate-400">
+                      <div className="h-44 flex items-center justify-center text-slate-400">
                         No completion photo
                       </div>
                     )}
@@ -1151,38 +1192,40 @@ export const SupervisorView: React.FC<SupervisorViewProps> = ({
 
                 {/* Supervisor Actions */}
                 <div className="grid grid-cols-2 gap-3 pt-2">
-                  <div className="p-3 rounded-xl bg-emerald-50 border border-emerald-200 space-y-2">
-                    <span className="font-bold text-emerald-900 block">Approve & Sign Off</span>
+                  <div className="p-3.5 rounded-2xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 space-y-2.5 shadow-2xs">
+                    <span className="font-bold text-emerald-900 dark:text-emerald-200 block">Approve & Sign Off</span>
                     <input
                       type="text"
                       value={approveNotes}
                       onChange={(e) => setApproveNotes(e.target.value)}
-                      placeholder="Sign-off notes..."
-                      className="w-full px-2.5 py-1.5 rounded-lg border border-slate-300 bg-white text-xs"
+                      placeholder="Sign-off audit notes..."
+                      className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 text-xs"
                     />
                     <button
                       onClick={handleApproveCompletion}
-                      className="w-full py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-lg text-xs flex items-center justify-center gap-1 shadow-xs cursor-pointer"
+                      className="w-full py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl text-xs flex items-center justify-center gap-1.5 shadow-xs cursor-pointer transition-colors"
                     >
-                      <CheckCircle2 className="w-4 h-4" /> Approve Resolution
+                      <CheckCircle2 className="w-4 h-4" />
+                      <span>Approve Resolution</span>
                     </button>
                   </div>
 
-                  <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 space-y-2">
-                    <span className="font-bold text-rose-900 block">Return for Rework</span>
+                  <div className="p-3.5 rounded-2xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800 space-y-2.5 shadow-2xs">
+                    <span className="font-bold text-rose-900 dark:text-rose-200 block">Return for Rework</span>
                     <input
                       type="text"
                       value={returnNote}
                       onChange={(e) => setReturnNote(e.target.value)}
                       placeholder="Explanation for rework..."
-                      className="w-full px-2.5 py-1.5 rounded-lg border border-slate-300 bg-white text-xs"
+                      className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 text-xs"
                     />
-                    {returnError && <p className="text-[11px] text-rose-600">{returnError}</p>}
+                    {returnError && <p className="text-[11px] text-rose-600 dark:text-rose-400">{returnError}</p>}
                     <button
                       onClick={handleReturnToProgress}
-                      className="w-full py-2 bg-rose-600 hover:bg-rose-700 text-white font-bold rounded-lg text-xs flex items-center justify-center gap-1 shadow-xs cursor-pointer"
+                      className="w-full py-2.5 bg-rose-600 hover:bg-rose-700 text-white font-bold rounded-xl text-xs flex items-center justify-center gap-1.5 shadow-xs cursor-pointer transition-colors"
                     >
-                      <RotateCcw className="w-4 h-4" /> Return to Cleaner
+                      <RotateCcw className="w-4 h-4" />
+                      <span>Return to Cleaner</span>
                     </button>
                   </div>
                 </div>
@@ -1195,41 +1238,43 @@ export const SupervisorView: React.FC<SupervisorViewProps> = ({
                 {/* Photo Gallery */}
                 <div className="grid grid-cols-2 gap-3">
                   {selectedComplaint.photos.map((photo) => (
-                    <div key={photo.id} className="rounded-xl overflow-hidden border border-slate-200">
-                      <img src={photo.url} alt={photo.photoType} className="w-full h-36 object-cover" />
-                      <div className="p-2 bg-slate-900 text-white text-[10px] flex justify-between">
-                        <span>
+                    <div key={photo.id} className="rounded-2xl overflow-hidden border border-slate-200 dark:border-slate-800 shadow-2xs">
+                      <img src={photo.url} alt={photo.photoType} className="w-full h-40 object-cover" />
+                      <div className="p-2.5 bg-slate-900 text-white text-[10px] flex justify-between">
+                        <span className="font-semibold capitalize">
                           {photo.photoType === 'resident_initial' ? 'Initial Photo' : 'Completion Proof'}
                         </span>
-                        <span>{new Date(photo.createdAt).toLocaleDateString()}</span>
+                        <span className="font-mono tabular-nums text-slate-400">
+                          {new Date(photo.createdAt).toLocaleDateString()}
+                        </span>
                       </div>
                     </div>
                   ))}
                 </div>
 
-                <div className="p-3 rounded-xl bg-slate-50 border border-slate-200 space-y-1">
+                <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700/80 space-y-2 shadow-2xs">
                   <div className="flex justify-between">
-                    <span className="text-slate-500">Waste Type:</span>
-                    <span className="font-semibold text-slate-800 capitalize">
+                    <span className="text-slate-500 dark:text-slate-400">Waste Type:</span>
+                    <span className="font-semibold text-slate-800 dark:text-slate-200 capitalize">
                       {selectedComplaint.wasteType.replace('_', ' ')}
                     </span>
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-slate-500">GPS Coordinates:</span>
-                    <span className="font-mono text-slate-800">
+                    <span className="text-slate-500 dark:text-slate-400">GPS Coordinates:</span>
+                    <span className="font-mono tabular-nums text-slate-800 dark:text-slate-200">
                       {selectedComplaint.latitude.toFixed(6)}, {selectedComplaint.longitude.toFixed(6)}
                     </span>
                   </div>
                   {selectedComplaint.remark && (
-                    <div className="pt-1 border-t border-slate-200">
-                      <span className="text-slate-500 block">Resident Remark:</span>
-                      <p className="text-slate-700 mt-0.5">{selectedComplaint.remark}</p>
+                    <div className="pt-2 border-t border-slate-200 dark:border-slate-700">
+                      <span className="text-slate-500 dark:text-slate-400 block font-semibold">Resident Remark:</span>
+                      <p className="text-slate-700 dark:text-slate-300 mt-0.5 leading-relaxed">{selectedComplaint.remark}</p>
                     </div>
                   )}
                   {selectedComplaint.rejectionReason && (
-                    <div className="pt-1 border-t border-rose-200 text-rose-800">
+                    <div className="pt-2 border-t border-rose-200 dark:border-rose-800 text-rose-800 dark:text-rose-200">
                       <span className="font-bold block">Rejection Reason:</span>
-                      <p className="mt-0.5">{selectedComplaint.rejectionReason}</p>
+                      <p className="mt-0.5 leading-relaxed">{selectedComplaint.rejectionReason}</p>
                     </div>
                   )}
                 </div>

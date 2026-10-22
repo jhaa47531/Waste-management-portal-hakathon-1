@@ -19,6 +19,7 @@ import {
   ShieldAlert,
   CheckCircle2,
   MapPin,
+  ArrowRight,
 } from 'lucide-react';
 
 interface AuthModalProps {
@@ -193,65 +194,67 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   const isPrivilegedRole = activeRole === 'supervisor' || activeRole === 'admin' || activeRole === 'administrator';
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in overflow-y-auto">
-      <div className="bg-white border border-slate-200 rounded-2xl w-full max-w-lg p-6 shadow-xl space-y-5 my-8">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-xs overflow-y-auto">
+      <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl w-full max-w-lg p-6 sm:p-7 shadow-2xl space-y-5 my-8 text-slate-900 dark:text-slate-100 transition-colors">
         {/* Header */}
-        <div className="flex items-start justify-between">
+        <div className="flex items-start justify-between gap-4">
           <div>
-            <div className="flex items-center gap-2">
-              <span className="p-1.5 rounded-lg bg-emerald-50 text-emerald-800 border border-emerald-200">
+            <div className="flex items-center gap-2.5">
+              <span className="p-2 rounded-xl bg-emerald-50 dark:bg-emerald-950/50 text-emerald-800 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 shadow-2xs">
                 {activeRole === 'cleaner' ? (
-                  <HardHat className="w-4 h-4 text-amber-600" />
+                  <HardHat className="w-5 h-5 text-amber-600 dark:text-amber-400" />
                 ) : activeRole === 'supervisor' ? (
-                  <UserCheck className="w-4 h-4 text-blue-600" />
+                  <UserCheck className="w-5 h-5 text-blue-600 dark:text-blue-400" />
                 ) : activeRole === 'admin' || activeRole === 'administrator' ? (
-                  <ShieldAlert className="w-4 h-4 text-purple-600" />
+                  <ShieldAlert className="w-5 h-5 text-purple-600 dark:text-purple-400" />
                 ) : (
-                  <Users className="w-4 h-4 text-emerald-700" />
+                  <Users className="w-5 h-5 text-emerald-700 dark:text-emerald-400" />
                 )}
               </span>
-              <h3 className="text-lg font-bold text-slate-900">
-                {activeRole === 'resident'
-                  ? mode === 'login' ? 'Resident Sign In' : 'Resident Self-Registration'
-                  : activeRole === 'cleaner'
-                  ? mode === 'login' ? 'Cleaner Sign In' : 'Cleaner Application Registration'
-                  : activeRole === 'supervisor'
-                  ? 'Supervisor Sign In'
-                  : 'Administrator Sign In'}
-              </h3>
+              <div>
+                <h3 className="text-lg font-black text-slate-900 dark:text-white tracking-tight">
+                  {activeRole === 'resident'
+                    ? mode === 'login' ? 'Resident Sign In' : 'Resident Self-Registration'
+                    : activeRole === 'cleaner'
+                    ? mode === 'login' ? 'Cleaner Sign In' : 'Cleaner Application Registration'
+                    : activeRole === 'supervisor'
+                    ? 'Supervisor Sign In'
+                    : 'Administrator Sign In'}
+                </h3>
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                  {activeRole === 'resident'
+                    ? 'Report visible waste and track municipal pickups in real time.'
+                    : activeRole === 'cleaner'
+                    ? 'Access assigned service tasks and submit photographic completion evidence.'
+                    : activeRole === 'supervisor'
+                    ? 'Verify resident submissions, review cleaner evidence, and assign staff.'
+                    : 'Authorized administrative governance and supervisor provisioning.'}
+                </p>
+              </div>
             </div>
-            <p className="text-xs text-slate-500 mt-1">
-              {activeRole === 'resident'
-                ? 'Report visible waste and track municipal pickups in real time.'
-                : activeRole === 'cleaner'
-                ? 'Access assigned service tasks and submit photographic completion evidence.'
-                : activeRole === 'supervisor'
-                ? 'Verify resident submissions, review cleaner evidence, and assign staff.'
-                : 'Authorized administrative governance and supervisor provisioning.'}
-            </p>
           </div>
           <button
             onClick={onClose}
-            className="p-1 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors"
+            className="p-1.5 rounded-xl text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer shrink-0"
             aria-label="Close modal"
           >
             <X className="w-5 h-5" />
           </button>
         </div>
 
-        {/* Role Navigation Choices (Navigation Only - Not Grants) */}
+        {/* Role Navigation Choices */}
         <div className="space-y-1.5">
-          <label className="text-[11px] font-bold uppercase tracking-wider text-slate-400 block">
+          <label className="text-[11px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500 block px-0.5">
             Role Entry Point
           </label>
-          <div className="grid grid-cols-4 gap-1.5 p-1 bg-slate-100 rounded-xl text-xs font-semibold">
+          <div className="grid grid-cols-4 gap-1.5 p-1 bg-slate-100 dark:bg-slate-800/80 rounded-2xl text-xs font-semibold">
             <button
               type="button"
               onClick={() => handleRoleChange('resident')}
-              className={`py-1.5 px-2 rounded-lg text-center transition-all flex items-center justify-center gap-1 ${
+              className={`py-2 px-2 rounded-xl text-center transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
                 activeRole === 'resident'
-                  ? 'bg-white text-emerald-800 font-bold shadow-xs'
-                  : 'text-slate-600 hover:text-slate-900'
+                  ? 'bg-white dark:bg-slate-900 text-emerald-800 dark:text-emerald-300 font-bold shadow-xs border border-slate-200/50 dark:border-slate-700'
+                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
               }`}
             >
               <Users className="w-3.5 h-3.5" />
@@ -260,10 +263,10 @@ export const AuthModal: React.FC<AuthModalProps> = ({
             <button
               type="button"
               onClick={() => handleRoleChange('cleaner')}
-              className={`py-1.5 px-2 rounded-lg text-center transition-all flex items-center justify-center gap-1 ${
+              className={`py-2 px-2 rounded-xl text-center transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
                 activeRole === 'cleaner'
-                  ? 'bg-white text-amber-800 font-bold shadow-xs'
-                  : 'text-slate-600 hover:text-slate-900'
+                  ? 'bg-white dark:bg-slate-900 text-amber-800 dark:text-amber-300 font-bold shadow-xs border border-slate-200/50 dark:border-slate-700'
+                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
               }`}
             >
               <HardHat className="w-3.5 h-3.5" />
@@ -272,10 +275,10 @@ export const AuthModal: React.FC<AuthModalProps> = ({
             <button
               type="button"
               onClick={() => handleRoleChange('supervisor')}
-              className={`py-1.5 px-2 rounded-lg text-center transition-all flex items-center justify-center gap-1 ${
+              className={`py-2 px-2 rounded-xl text-center transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
                 activeRole === 'supervisor'
-                  ? 'bg-white text-blue-800 font-bold shadow-xs'
-                  : 'text-slate-600 hover:text-slate-900'
+                  ? 'bg-white dark:bg-slate-900 text-blue-800 dark:text-blue-300 font-bold shadow-xs border border-slate-200/50 dark:border-slate-700'
+                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
               }`}
             >
               <UserCheck className="w-3.5 h-3.5" />
@@ -284,10 +287,10 @@ export const AuthModal: React.FC<AuthModalProps> = ({
             <button
               type="button"
               onClick={() => handleRoleChange('admin')}
-              className={`py-1.5 px-2 rounded-lg text-center transition-all flex items-center justify-center gap-1 ${
+              className={`py-2 px-2 rounded-xl text-center transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
                 activeRole === 'admin' || activeRole === 'administrator'
-                  ? 'bg-white text-purple-800 font-bold shadow-xs'
-                  : 'text-slate-600 hover:text-slate-900'
+                  ? 'bg-white dark:bg-slate-900 text-purple-800 dark:text-purple-300 font-bold shadow-xs border border-slate-200/50 dark:border-slate-700'
+                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
               }`}
             >
               <ShieldAlert className="w-3.5 h-3.5" />
@@ -298,33 +301,33 @@ export const AuthModal: React.FC<AuthModalProps> = ({
 
         {/* Success Notice Feedback */}
         {notice && (
-          <div className="p-3 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs flex items-start gap-2">
-            <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
-            <span>{notice}</span>
+          <div className="p-3.5 rounded-2xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800/80 text-emerald-800 dark:text-emerald-300 text-xs flex items-start gap-2.5 shadow-2xs">
+            <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0 mt-0.5" />
+            <span className="leading-relaxed">{notice}</span>
           </div>
         )}
 
         {/* Error Feedback */}
         {error && (
-          <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 text-xs flex items-start gap-2">
-            <AlertCircle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
-            <span>{error}</span>
+          <div className="p-3.5 rounded-2xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800/80 text-rose-800 dark:text-rose-300 text-xs flex items-start gap-2.5 shadow-2xs">
+            <AlertCircle className="w-4 h-4 text-rose-600 dark:text-rose-400 shrink-0 mt-0.5" />
+            <span className="leading-relaxed">{error}</span>
           </div>
         )}
 
         {/* Mode Toggle for Resident & Cleaner */}
         {!isPrivilegedRole && (
-          <div className="flex p-1 bg-slate-100 rounded-xl text-xs font-bold">
+          <div className="flex p-1 bg-slate-100 dark:bg-slate-800/80 rounded-2xl text-xs font-bold">
             <button
               type="button"
               onClick={() => {
                 setMode('login');
                 setError(null);
               }}
-              className={`flex-1 py-1.5 rounded-lg transition-all ${
+              className={`flex-1 py-2 rounded-xl transition-all cursor-pointer ${
                 mode === 'login'
-                  ? 'bg-white text-slate-900 shadow-xs'
-                  : 'text-slate-500 hover:text-slate-800'
+                  ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-xs border border-slate-200/50 dark:border-slate-700'
+                  : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'
               }`}
             >
               Sign In
@@ -335,10 +338,10 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                 setMode('register');
                 setError(null);
               }}
-              className={`flex-1 py-1.5 rounded-lg transition-all ${
+              className={`flex-1 py-2 rounded-xl transition-all cursor-pointer ${
                 mode === 'register'
-                  ? 'bg-white text-slate-900 shadow-xs'
-                  : 'text-slate-500 hover:text-slate-800'
+                  ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-xs border border-slate-200/50 dark:border-slate-700'
+                  : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'
               }`}
             >
               {activeRole === 'cleaner' ? 'Apply as Cleaner' : 'Register as Resident'}
@@ -348,8 +351,8 @@ export const AuthModal: React.FC<AuthModalProps> = ({
 
         {/* Supervisor Provisioning Notice */}
         {activeRole === 'supervisor' && (
-          <div className="p-3 rounded-xl bg-blue-50 border border-blue-200 text-blue-900 text-xs flex items-start gap-2">
-            <UserCheck className="w-4 h-4 text-blue-600 shrink-0 mt-0.5" />
+          <div className="p-3.5 rounded-2xl bg-blue-50 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-800/80 text-blue-900 dark:text-blue-300 text-xs flex items-start gap-2.5 shadow-2xs leading-relaxed">
+            <UserCheck className="w-4 h-4 text-blue-600 dark:text-blue-400 shrink-0 mt-0.5" />
             <p>
               Supervisor accounts are securely provisioned and activated by the Municipal Administrator. If you do not have credentials yet, please contact your municipal department administrator.
             </p>
@@ -358,10 +361,10 @@ export const AuthModal: React.FC<AuthModalProps> = ({
 
         {/* Administrator Notice */}
         {(activeRole === 'admin' || activeRole === 'administrator') && (
-          <div className="p-3 rounded-xl bg-purple-50 border border-purple-200 text-purple-900 text-xs flex items-start gap-2">
-            <ShieldAlert className="w-4 h-4 text-purple-600 shrink-0 mt-0.5" />
+          <div className="p-3.5 rounded-2xl bg-purple-50 dark:bg-purple-950/40 border border-purple-200 dark:border-purple-800/80 text-purple-900 dark:text-purple-300 text-xs flex items-start gap-2.5 shadow-2xs leading-relaxed">
+            <ShieldAlert className="w-4 h-4 text-purple-600 dark:text-purple-400 shrink-0 mt-0.5" />
             <p>
-              Designated Municipal Administrator login (<code className="font-mono font-semibold">jhaa47531@gmail.com</code>). Enter your password to access supervisor provisioning and governance.
+              Designated Municipal Administrator login (<code className="font-mono font-semibold text-purple-800 dark:text-purple-300 bg-purple-100/60 dark:bg-purple-900/60 px-1 py-0.5 rounded">jhaa47531@gmail.com</code>). Enter your password to access supervisor provisioning and governance.
             </p>
           </div>
         )}
@@ -370,11 +373,11 @@ export const AuthModal: React.FC<AuthModalProps> = ({
         {mode === 'login' ? (
           <form onSubmit={handleLogin} className="space-y-4 text-xs">
             <div>
-              <label className="block font-bold text-slate-700 mb-1">
+              <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1.5">
                 Email Address
               </label>
               <div className="relative">
-                <Mail className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
+                <Mail className="w-4 h-4 text-slate-400 dark:text-slate-500 absolute left-3.5 top-3" />
                 <input
                   type="email"
                   required
@@ -385,24 +388,24 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                       ? 'jhaa47531@gmail.com'
                       : 'name@example.com'
                   }
-                  className="w-full pl-9 pr-3 py-2 rounded-xl border border-slate-300 bg-white text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
+                  className="w-full pl-10 pr-3.5 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition-colors"
                 />
               </div>
             </div>
 
             <div>
-              <label className="block font-bold text-slate-700 mb-1">
+              <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1.5">
                 Password
               </label>
               <div className="relative">
-                <Lock className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
+                <Lock className="w-4 h-4 text-slate-400 dark:text-slate-500 absolute left-3.5 top-3" />
                 <input
                   type="password"
                   required
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   placeholder="Enter your password"
-                  className="w-full pl-9 pr-3 py-2 rounded-xl border border-slate-300 bg-white text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
+                  className="w-full pl-10 pr-3.5 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition-colors"
                 />
               </div>
             </div>
@@ -410,111 +413,114 @@ export const AuthModal: React.FC<AuthModalProps> = ({
             <button
               type="submit"
               disabled={loading}
-              className="w-full py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold shadow-xs transition-colors cursor-pointer disabled:opacity-50"
+              className="w-full py-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold shadow-sm shadow-emerald-600/20 transition-all cursor-pointer disabled:opacity-50 flex items-center justify-center gap-2"
             >
-              {loading ? 'Authenticating...' : `Sign In as ${
-                activeRole === 'resident'
-                  ? 'Resident'
-                  : activeRole === 'cleaner'
-                  ? 'Cleaner'
-                  : activeRole === 'supervisor'
-                  ? 'Supervisor'
-                  : 'Administrator'
-              }`}
+              <span>
+                {loading ? 'Authenticating...' : `Sign In as ${
+                  activeRole === 'resident'
+                    ? 'Resident'
+                    : activeRole === 'cleaner'
+                    ? 'Cleaner'
+                    : activeRole === 'supervisor'
+                    ? 'Supervisor'
+                    : 'Administrator'
+                }`}
+              </span>
+              {!loading && <ArrowRight className="w-4 h-4" />}
             </button>
           </form>
         ) : activeRole === 'cleaner' ? (
           /* Cleaner Registration Form */
           <form onSubmit={handleCleanerRegister} className="space-y-3.5 text-xs">
             <div>
-              <label className="block font-bold text-slate-700 mb-1">
+              <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1.5">
                 Full Name *
               </label>
               <div className="relative">
-                <User className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
+                <User className="w-4 h-4 text-slate-400 dark:text-slate-500 absolute left-3.5 top-3" />
                 <input
                   type="text"
                   required
                   value={fullName}
                   onChange={(e) => setFullName(e.target.value)}
                   placeholder="e.g. John Sanitation"
-                  className="w-full pl-9 pr-3 py-2 rounded-xl border border-slate-300 bg-white text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                  className="w-full pl-10 pr-3.5 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition-colors"
                 />
               </div>
             </div>
 
             <div>
-              <label className="block font-bold text-slate-700 mb-1">
+              <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1.5">
                 Contact Phone Number *
               </label>
               <div className="relative">
-                <Phone className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
+                <Phone className="w-4 h-4 text-slate-400 dark:text-slate-500 absolute left-3.5 top-3" />
                 <input
                   type="tel"
                   required
                   value={phone}
                   onChange={(e) => setPhone(e.target.value)}
                   placeholder="e.g. +1-555-0188"
-                  className="w-full pl-9 pr-3 py-2 rounded-xl border border-slate-300 bg-white text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                  className="w-full pl-10 pr-3.5 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition-colors"
                 />
               </div>
             </div>
 
             <div>
-              <label className="block font-bold text-slate-700 mb-1">
+              <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1.5">
                 Email Address *
               </label>
               <div className="relative">
-                <Mail className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
+                <Mail className="w-4 h-4 text-slate-400 dark:text-slate-500 absolute left-3.5 top-3" />
                 <input
                   type="email"
                   required
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   placeholder="cleaner@example.com"
-                  className="w-full pl-9 pr-3 py-2 rounded-xl border border-slate-300 bg-white text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                  className="w-full pl-10 pr-3.5 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition-colors"
                 />
               </div>
             </div>
 
             <div>
-              <label className="block font-bold text-slate-700 mb-1">
+              <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1.5">
                 Password *
               </label>
               <div className="relative">
-                <Lock className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
+                <Lock className="w-4 h-4 text-slate-400 dark:text-slate-500 absolute left-3.5 top-3" />
                 <input
                   type="password"
                   required
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   placeholder="Create a secure password"
-                  className="w-full pl-9 pr-3 py-2 rounded-xl border border-slate-300 bg-white text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                  className="w-full pl-10 pr-3.5 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition-colors"
                 />
               </div>
             </div>
 
-            {/* Preferred Localities (Select 1-5) */}
+            {/* Preferred Localities */}
             <div className="space-y-1.5 pt-1">
               <div className="flex items-center justify-between">
-                <label className="block font-bold text-slate-700">
+                <label className="block font-bold text-slate-700 dark:text-slate-300">
                   Select Preferred Service Localities (1 to 5) *
                 </label>
                 <span
                   className={`text-[11px] font-bold px-2 py-0.5 rounded-full ${
                     selectedLocalityIds.length >= 1 && selectedLocalityIds.length <= 5
-                      ? 'bg-emerald-100 text-emerald-800'
-                      : 'bg-amber-100 text-amber-800'
+                      ? 'bg-emerald-100 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-300'
+                      : 'bg-amber-100 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300'
                   }`}
                 >
                   Selected: {selectedLocalityIds.length} / 5
                 </span>
               </div>
-              <p className="text-[11px] text-slate-500">
+              <p className="text-[11px] text-slate-500 dark:text-slate-400">
                 Choose the municipal wards you can service. Final service authorization is confirmed by the supervisor.
               </p>
 
-              <div className="max-h-36 overflow-y-auto border border-slate-200 rounded-xl p-2 space-y-1 bg-slate-50/50">
+              <div className="max-h-36 overflow-y-auto border border-slate-200 dark:border-slate-700/80 rounded-xl p-2 space-y-1 bg-slate-50/70 dark:bg-slate-800/50">
                 {localities
                   .filter((l) => l.active)
                   .map((loc) => {
@@ -524,116 +530,118 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                         type="button"
                         key={loc.id}
                         onClick={() => handleToggleLocality(loc.id)}
-                        className={`w-full text-left px-2.5 py-1.5 rounded-lg text-xs flex items-center justify-between transition-colors ${
+                        className={`w-full text-left px-2.5 py-2 rounded-lg text-xs flex items-center justify-between transition-colors cursor-pointer ${
                           isSelected
-                            ? 'bg-emerald-50 text-emerald-900 font-semibold border border-emerald-300'
-                            : 'bg-white hover:bg-slate-100 text-slate-700 border border-slate-200'
+                            ? 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-900 dark:text-emerald-200 font-semibold border border-emerald-300 dark:border-emerald-700'
+                            : 'bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700/60 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700'
                         }`}
                       >
                         <span className="flex items-center gap-1.5">
-                          <MapPin className="w-3 h-3 text-slate-400" />
+                          <MapPin className="w-3.5 h-3.5 text-slate-400 dark:text-slate-500" />
                           {loc.name}
                         </span>
-                        {isSelected && <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />}
+                        {isSelected && <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />}
                       </button>
                     );
                   })}
               </div>
             </div>
 
-            <div className="p-2.5 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 text-[11px] leading-relaxed">
+            <div className="p-3 rounded-2xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800/80 text-amber-900 dark:text-amber-300 text-[11px] leading-relaxed shadow-2xs">
               Cleaner applications require supervisor review before tasks can be assigned. Your account will remain in <span className="font-semibold">pending</span> status until authorized.
             </div>
 
             <button
               type="submit"
               disabled={loading}
-              className="w-full py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold shadow-xs transition-colors cursor-pointer disabled:opacity-50"
+              className="w-full py-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold shadow-sm shadow-emerald-600/20 transition-all cursor-pointer disabled:opacity-50 flex items-center justify-center gap-2"
             >
-              {loading ? 'Submitting Application...' : 'Submit Cleaner Application'}
+              <span>{loading ? 'Submitting Application...' : 'Submit Cleaner Application'}</span>
+              {!loading && <ArrowRight className="w-4 h-4" />}
             </button>
           </form>
         ) : (
           /* Resident Registration Form */
-          <form onSubmit={handleResidentRegister} className="space-y-3 text-xs">
+          <form onSubmit={handleResidentRegister} className="space-y-3.5 text-xs">
             <div>
-              <label className="block font-bold text-slate-700 mb-1">
+              <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1.5">
                 Full Name *
               </label>
               <div className="relative">
-                <User className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
+                <User className="w-4 h-4 text-slate-400 dark:text-slate-500 absolute left-3.5 top-3" />
                 <input
                   type="text"
                   required
                   value={fullName}
                   onChange={(e) => setFullName(e.target.value)}
                   placeholder="Enter your full name"
-                  className="w-full pl-9 pr-3 py-2 rounded-xl border border-slate-300 bg-white text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                  className="w-full pl-10 pr-3.5 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition-colors"
                 />
               </div>
             </div>
 
             <div>
-              <label className="block font-bold text-slate-700 mb-1">
+              <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1.5">
                 Contact Phone Number (Mandatory for pickup verification) *
               </label>
               <div className="relative">
-                <Phone className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
+                <Phone className="w-4 h-4 text-slate-400 dark:text-slate-500 absolute left-3.5 top-3" />
                 <input
                   type="tel"
                   required
                   value={phone}
                   onChange={(e) => setPhone(e.target.value)}
                   placeholder="e.g. 555-0123"
-                  className="w-full pl-9 pr-3 py-2 rounded-xl border border-slate-300 bg-white text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                  className="w-full pl-10 pr-3.5 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition-colors"
                 />
               </div>
             </div>
 
             <div>
-              <label className="block font-bold text-slate-700 mb-1">
+              <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1.5">
                 Email Address *
               </label>
               <div className="relative">
-                <Mail className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
+                <Mail className="w-4 h-4 text-slate-400 dark:text-slate-500 absolute left-3.5 top-3" />
                 <input
                   type="email"
                   required
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   placeholder="resident@example.com"
-                  className="w-full pl-9 pr-3 py-2 rounded-xl border border-slate-300 bg-white text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                  className="w-full pl-10 pr-3.5 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition-colors"
                 />
               </div>
             </div>
 
             <div>
-              <label className="block font-bold text-slate-700 mb-1">
+              <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1.5">
                 Password *
               </label>
               <div className="relative">
-                <Lock className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
+                <Lock className="w-4 h-4 text-slate-400 dark:text-slate-500 absolute left-3.5 top-3" />
                 <input
                   type="password"
                   required
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   placeholder="Create a password"
-                  className="w-full pl-9 pr-3 py-2 rounded-xl border border-slate-300 bg-white text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                  className="w-full pl-10 pr-3.5 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition-colors"
                 />
               </div>
             </div>
 
-            <p className="text-[11px] text-slate-500">
-              Municipal Security Policy: Public resident registrations are strictly granted the <code className="font-mono text-emerald-800">resident</code> role.
+            <p className="text-[11px] text-slate-500 dark:text-slate-400">
+              Municipal Security Policy: Public resident registrations are strictly granted the <code className="font-mono text-emerald-800 dark:text-emerald-300 font-semibold">resident</code> role.
             </p>
 
             <button
               type="submit"
               disabled={loading}
-              className="w-full py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold shadow-xs transition-colors cursor-pointer disabled:opacity-50"
+              className="w-full py-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold shadow-sm shadow-emerald-600/20 transition-all cursor-pointer disabled:opacity-50 flex items-center justify-center gap-2"
             >
-              {loading ? 'Registering Account...' : 'Register Resident Account'}
+              <span>{loading ? 'Registering Account...' : 'Register Resident Account'}</span>
+              {!loading && <ArrowRight className="w-4 h-4" />}
             </button>
           </form>
         )}
