@@ -5,10 +5,11 @@
 
 import React, { useState } from 'react';
 import { UserProfile, Complaint, Locality, WasteType } from '../types/index.ts';
-import { ALLOWED_WASTE_TYPES, MAX_PHOTO_SIZE_BYTES } from '../utils/rules.ts';
+import { ALLOWED_WASTE_TYPES, MAX_PHOTO_SIZE_BYTES, getComplaintPhotoLabel } from '../utils/rules.ts';
 import { portalStore } from '../services/store.ts';
 import { StatusBadge, UrgencyBadge } from './StatusBadge.tsx';
 import { ComplaintTimeline } from './ComplaintTimeline.tsx';
+import { SignedPhoto } from './SignedPhoto.tsx';
 import {
   MapPin,
   Camera,
@@ -922,17 +923,16 @@ export const ResidentView: React.FC<ResidentViewProps> = ({
                     className="rounded-2xl overflow-hidden border border-slate-200 dark:border-slate-800 bg-slate-950 shadow-sm"
                   >
                     <div className="h-48">
-                      <img
+                      <SignedPhoto
                         src={photo.url}
-                        alt={photo.photoType}
+                        storagePath={photo.storagePath}
+                        alt={getComplaintPhotoLabel(photo.photoType)}
                         className="w-full h-full object-cover"
                       />
                     </div>
                     <div className="p-3 bg-slate-900 text-white text-[11px] flex justify-between items-center">
                       <span className="font-semibold capitalize">
-                        {photo.photoType === 'resident_initial'
-                          ? 'Initial Resident Photo'
-                          : 'After-Cleaning Proof'}
+                        {getComplaintPhotoLabel(photo.photoType)}
                       </span>
                       <span className="text-slate-400 font-mono tabular-nums">
                         {new Date(photo.createdAt).toLocaleTimeString([], {

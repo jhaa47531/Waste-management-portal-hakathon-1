@@ -23,6 +23,9 @@ import {
   generateTrackingCode,
   isAdministrator,
   isSupervisorOrAdmin,
+  isInitialComplaintPhoto,
+  isCompletionComplaintPhoto,
+  getComplaintPhotoLabel,
 } from '../utils/rules.ts';
 import { supabase, isSupabaseConfigured, COMPLAINT_STORAGE_BUCKET } from './supabase.ts';
 
@@ -123,6 +126,100 @@ class PortalStore {
 
   public getCurrentUser(): UserProfile | null {
     return this.state.currentUser;
+  }
+
+  // --------------------------------------------------------------------------
+  // Private Storage Signed URL Cache & Retrieval
+  // --------------------------------------------------------------------------
+  private signedUrlCache: Map<string, { url: string; expiresAt: number }> = new Map();
+
+  public clearSignedUrlCache(storagePath?: string): void {
+    if (storagePath) {
+      const cleanPath = storagePath.trim().replace(/^\/+/, '');
+      this.signedUrlCache.delete(cleanPath);
+    } else {
+      this.signedUrlCache.clear();
+    }
+  }
+
+  /**
+   * Retrieves a usable signed URL for a photo stored in the private 'waste-complaint-photos' bucket.
+   * Utilizes in-memory caching (expires in 50 minutes) and cascades from client SDK to server admin API.
+   */
+  public async getPhotoSignedUrl(storagePath: string): Promise<string> {
+    if (!storagePath) return '';
+    const cleanPath = storagePath.trim().replace(/^\/+/, '');
+    if (!cleanPath) return '';
+
+    // If already a data URI or blob URL
+    if (cleanPath.startsWith('data:') || cleanPath.startsWith('blob:')) {
+      return cleanPath;
+    }
+
+    // Check in-memory cache
+    const cached = this.signedUrlCache.get(cleanPath);
+    if (cached && cached.expiresAt > Date.now() + 60 * 1000) {
+      return cached.url;
+    }
+
+    // 1. Primary: Use client Supabase SDK storage API
+    if (this.isLive && supabase) {
+      try {
+        const { data, error } = await supabase.storage
+          .from(COMPLAINT_STORAGE_BUCKET)
+          .createSignedUrl(cleanPath, 3600);
+
+        if (!error && data?.signedUrl) {
+          this.signedUrlCache.set(cleanPath, {
+            url: data.signedUrl,
+            expiresAt: Date.now() + 50 * 60 * 1000,
+          });
+          return data.signedUrl;
+        }
+        if (error) {
+          console.warn('Client createSignedUrl note:', error.message);
+        }
+      } catch (err: any) {
+        console.warn('Client createSignedUrl exception:', err?.message);
+      }
+    }
+
+    // 2. Fallback: Authenticated backend server proxy using server-side admin client
+    try {
+      let token: string | undefined;
+      if (supabase) {
+        const { data: sessionData } = await supabase.auth.getSession();
+        token = sessionData?.session?.access_token;
+      }
+
+      if (token) {
+        const res = await fetch('/api/photos/signed-url', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({ storagePath: cleanPath, expiresIn: 3600 }),
+        });
+        const data = await res.json().catch(() => null);
+        if (res.ok && data?.success && data?.signedUrl) {
+          this.signedUrlCache.set(cleanPath, {
+            url: data.signedUrl,
+            expiresAt: Date.now() + 50 * 60 * 1000,
+          });
+          return data.signedUrl;
+        }
+      }
+    } catch (err: any) {
+      console.warn('Backend proxy /api/photos/signed-url exception:', err?.message);
+    }
+
+    // Return original path if it was already an absolute URL
+    if (cleanPath.startsWith('http://') || cleanPath.startsWith('https://')) {
+      return cleanPath;
+    }
+
+    return '';
   }
 
   // --------------------------------------------------------------------------
@@ -247,6 +344,41 @@ class PortalStore {
         .order('created_at', { ascending: false });
 
       if (!complaintsErr && complaintsData) {
+        // Collect all distinct photo storage paths to generate signed access URLs
+        const pathsToSign: string[] = [];
+        for (const c of complaintsData) {
+          for (const p of c.photos || []) {
+            if (p.storage_path) {
+              const clean = p.storage_path.trim().replace(/^\/+/, '');
+              if (clean && !clean.startsWith('http') && !clean.startsWith('data:')) {
+                pathsToSign.push(clean);
+              }
+            }
+          }
+        }
+        const uniquePaths = Array.from(new Set(pathsToSign));
+
+        if (uniquePaths.length > 0) {
+          try {
+            const { data: signedResults, error: signErr } = await supabase.storage
+              .from(COMPLAINT_STORAGE_BUCKET)
+              .createSignedUrls(uniquePaths, 3600);
+
+            if (!signErr && Array.isArray(signedResults)) {
+              for (const item of signedResults) {
+                if (item.path && item.signedUrl && !item.error) {
+                  this.signedUrlCache.set(item.path, {
+                    url: item.signedUrl,
+                    expiresAt: Date.now() + 50 * 60 * 1000,
+                  });
+                }
+              }
+            }
+          } catch (batchErr) {
+            console.warn('Batch createSignedUrls note:', batchErr);
+          }
+        }
+
         this.state.complaints = complaintsData.map((c: any) => ({
           id: c.id,
           trackingCode: c.tracking_code,
@@ -271,17 +403,21 @@ class PortalStore {
           residentConfirmedAt: c.resident_confirmed_at,
           createdAt: c.created_at,
           updatedAt: c.updated_at,
-          photos: (c.photos || []).map((p: any) => ({
-            id: p.id,
-            complaintId: p.complaint_id,
-            uploaderId: p.uploaded_by || p.uploader_id,
-            photoType: p.photo_type,
-            storagePath: p.storage_path,
-            url: p.storage_path,
-            mimeType: p.mime_type,
-            fileSizeBytes: p.size_bytes || p.file_size_bytes || 0,
-            createdAt: p.created_at,
-          })),
+          photos: (c.photos || []).map((p: any) => {
+            const cleanPath = (p.storage_path || '').trim().replace(/^\/+/, '');
+            const cachedUrl = this.signedUrlCache.get(cleanPath)?.url;
+            return {
+              id: p.id,
+              complaintId: p.complaint_id,
+              uploaderId: p.uploaded_by || p.uploader_id,
+              photoType: p.photo_type,
+              storagePath: p.storage_path,
+              url: cachedUrl || (p.storage_path.startsWith('http') || p.storage_path.startsWith('data:') ? p.storage_path : ''),
+              mimeType: p.mime_type,
+              fileSizeBytes: p.size_bytes || p.file_size_bytes || 0,
+              createdAt: p.created_at,
+            };
+          }),
           history: (c.history || []).map((h: any) => ({
             id: h.id,
             complaintId: h.complaint_id,
@@ -302,7 +438,7 @@ class PortalStore {
         try {
           const { data: sessionData } = await supabase.auth.getSession();
           const token = sessionData?.session?.access_token;
-          if (token && isAdministrator(this.state.currentUser.role)) {
+          if (token && isSupervisorOrAdmin(this.state.currentUser.role)) {
             const dirRes = await fetch('/api/admin/users', {
               headers: { Authorization: `Bearer ${token}` },
             });
@@ -321,14 +457,14 @@ class PortalStore {
             }
           }
         } catch (err) {
-          console.warn('Admin directory fetch note:', err);
+          console.warn('Admin/Supervisor directory fetch note:', err);
         }
 
         // Fallback to direct PostgREST queries if directory endpoint not loaded
         if (!directoryLoaded) {
           const { data: profs } = await supabase.from('profiles').select('*');
-          if (profs) {
-            const userList = profs.map((p: any) => ({
+          if (profs && profs.length > 0) {
+            const userList: UserProfile[] = profs.map((p: any) => ({
               id: p.id,
               email: p.email || '',
               fullName: p.full_name,
@@ -340,6 +476,14 @@ class PortalStore {
               createdAt: p.created_at,
               updatedAt: p.updated_at,
             }));
+
+            // Preserve existing cleaners so they are never lost on fallback
+            const existingCleaners = this.state.users.filter((u) => u.role === 'cleaner');
+            for (const c of existingCleaners) {
+              if (!userList.some((u: any) => u.id === c.id)) {
+                userList.push(c);
+              }
+            }
 
             // Resolve supervisor names
             userList.forEach((u: any) => {
@@ -355,7 +499,7 @@ class PortalStore {
           const { data: saList } = await supabase
             .from('cleaner_service_areas')
             .select('*, locality:localities(name)');
-          if (saList) {
+          if (saList && saList.length > 0) {
             this.state.serviceAreas = saList.map((sa: any) => ({
               id: sa.id,
               cleanerId: sa.cleaner_id,
@@ -1240,11 +1384,43 @@ class PortalStore {
           p_cleaner_id: cleanerId,
           p_notes: notes || null,
         });
-        if (error) return { success: false, error: error.message };
-        await this.loadSupabaseData();
-        return { success: true };
+        if (!error) {
+          await this.loadSupabaseData();
+          return { success: true };
+        }
+        console.warn('Direct RPC assign_cleaner note:', error.message);
       } catch (err: any) {
-        return { success: false, error: err.message };
+        console.warn('RPC assign_cleaner exception:', err?.message);
+      }
+
+      // Robust fallback to server API endpoint
+      try {
+        const { data: sessionData } = await supabase.auth.getSession();
+        const token = sessionData?.session?.access_token;
+        if (token) {
+          const apiRes = await fetch('/api/supervisor/assign-cleaner', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${token}`,
+            },
+            body: JSON.stringify({
+              complaintId,
+              cleanerId,
+              notes,
+            }),
+          });
+          const apiData = await apiRes.json().catch(() => null);
+          if (apiRes.ok && apiData?.success) {
+            await this.loadSupabaseData();
+            return { success: true };
+          }
+          if (apiData?.error) {
+            return { success: false, error: apiData.error };
+          }
+        }
+      } catch (err: any) {
+        return { success: false, error: err.message || 'Failed to assign cleaner.' };
       }
     }
 
@@ -1285,7 +1461,7 @@ class PortalStore {
     const complaint = this.state.complaints.find((c) => c.id === complaintId);
     if (!complaint) return { success: false, error: 'Complaint not found.' };
 
-    const hasAfterPhoto = complaint.photos.some((p) => p.photoType === 'cleaner_completion');
+    const hasAfterPhoto = complaint.photos.some((p) => isCompletionComplaintPhoto(p.photoType));
     const check = canTransitionStatus(complaint.status, 'completed', user.role, {
       callerId: user.id,
       hasAfterPhoto,
@@ -1293,16 +1469,66 @@ class PortalStore {
     if (!check.allowed) return { success: false, error: check.reason };
 
     if (this.isLive && supabase) {
+      let rpcSucceeded = false;
+
+      // 1. Primary RPC with standard parameter p_complaint_id
       try {
         const { error } = await supabase.rpc('approve_completion', {
           p_complaint_id: complaintId,
           p_notes: notes || null,
         });
-        if (error) return { success: false, error: error.message };
-        await this.loadSupabaseData();
-        return { success: true };
+        if (!error) {
+          rpcSucceeded = true;
+          await this.loadSupabaseData();
+          return { success: true };
+        }
+        console.warn('Direct RPC approve_completion (p_complaint_id) note:', error.message);
       } catch (err: any) {
-        return { success: false, error: err.message };
+        console.warn('Direct RPC approve_completion (p_complaint_id) exception:', err?.message);
+      }
+
+      // 2. Secondary RPC with parameter complaint_id (PostgREST variant compatibility)
+      if (!rpcSucceeded) {
+        try {
+          const { error } = await supabase.rpc('approve_completion', {
+            complaint_id: complaintId,
+            notes: notes || null,
+          });
+          if (!error) {
+            rpcSucceeded = true;
+            await this.loadSupabaseData();
+            return { success: true };
+          }
+          console.warn('Direct RPC approve_completion (complaint_id) note:', error.message);
+        } catch (err: any) {
+          console.warn('Direct RPC approve_completion (complaint_id) exception:', err?.message);
+        }
+      }
+
+      // 3. Robust authenticated server API endpoint fallback
+      try {
+        const { data: sessionData } = await supabase.auth.getSession();
+        const token = sessionData?.session?.access_token;
+        if (token) {
+          const apiRes = await fetch('/api/supervisor/approve-completion', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${token}`,
+            },
+            body: JSON.stringify({ complaintId, notes }),
+          });
+          const apiData = await apiRes.json().catch(() => null);
+          if (apiRes.ok && apiData?.success) {
+            await this.loadSupabaseData();
+            return { success: true };
+          }
+          if (apiData?.error) {
+            return { success: false, error: apiData.error };
+          }
+        }
+      } catch (err: any) {
+        return { success: false, error: err.message || 'Failed to approve completion.' };
       }
     }
 
@@ -1341,21 +1567,71 @@ class PortalStore {
 
     const check = canTransitionStatus(complaint.status, 'in_progress', user.role, {
       callerId: user.id,
-      returnNote,
+      returnNote: returnNote.trim(),
     });
     if (!check.allowed) return { success: false, error: check.reason };
 
     if (this.isLive && supabase) {
+      let rpcSucceeded = false;
+
+      // 1. Primary RPC with standard parameter p_complaint_id, p_notes
       try {
         const { error } = await supabase.rpc('return_to_progress', {
           p_complaint_id: complaintId,
           p_notes: returnNote.trim(),
         });
-        if (error) return { success: false, error: error.message };
-        await this.loadSupabaseData();
-        return { success: true };
+        if (!error) {
+          rpcSucceeded = true;
+          await this.loadSupabaseData();
+          return { success: true };
+        }
+        console.warn('Direct RPC return_to_progress (p_complaint_id) note:', error.message);
       } catch (err: any) {
-        return { success: false, error: err.message };
+        console.warn('Direct RPC return_to_progress (p_complaint_id) exception:', err?.message);
+      }
+
+      // 2. Secondary RPC with parameter complaint_id, notes
+      if (!rpcSucceeded) {
+        try {
+          const { error } = await supabase.rpc('return_to_progress', {
+            complaint_id: complaintId,
+            notes: returnNote.trim(),
+          });
+          if (!error) {
+            rpcSucceeded = true;
+            await this.loadSupabaseData();
+            return { success: true };
+          }
+          console.warn('Direct RPC return_to_progress (complaint_id) note:', error.message);
+        } catch (err: any) {
+          console.warn('Direct RPC return_to_progress (complaint_id) exception:', err?.message);
+        }
+      }
+
+      // 3. Robust authenticated server API endpoint fallback
+      try {
+        const { data: sessionData } = await supabase.auth.getSession();
+        const token = sessionData?.session?.access_token;
+        if (token) {
+          const apiRes = await fetch('/api/supervisor/return-to-progress', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${token}`,
+            },
+            body: JSON.stringify({ complaintId, returnNote: returnNote.trim() }),
+          });
+          const apiData = await apiRes.json().catch(() => null);
+          if (apiRes.ok && apiData?.success) {
+            await this.loadSupabaseData();
+            return { success: true };
+          }
+          if (apiData?.error) {
+            return { success: false, error: apiData.error };
+          }
+        }
+      } catch (err: any) {
+        return { success: false, error: err.message || 'Failed to return complaint to in-progress.' };
       }
     }
 
@@ -1399,18 +1675,68 @@ class PortalStore {
     if (!check.allowed) return { success: false, error: check.reason };
 
     if (this.isLive && supabase) {
+      let rpcSucceeded = false;
+
+      // 1. Primary Direct RPC with standard parameter p_complaint_id
       try {
         const { error } = await supabase.rpc('start_complaint_progress', {
           p_complaint_id: complaintId,
         });
-        if (error) return { success: false, error: error.message };
-        await this.loadSupabaseData();
-        return { success: true };
+        if (!error) {
+          rpcSucceeded = true;
+          await this.loadSupabaseData();
+          return { success: true };
+        }
+        console.warn('Direct RPC start_complaint_progress (p_complaint_id) note:', error.message);
       } catch (err: any) {
-        return { success: false, error: err.message };
+        console.warn('Direct RPC start_complaint_progress (p_complaint_id) exception:', err?.message);
+      }
+
+      // 2. Secondary Direct RPC with parameter complaint_id (PostgREST variant compatibility)
+      if (!rpcSucceeded) {
+        try {
+          const { error } = await supabase.rpc('start_complaint_progress', {
+            complaint_id: complaintId,
+          });
+          if (!error) {
+            rpcSucceeded = true;
+            await this.loadSupabaseData();
+            return { success: true };
+          }
+          console.warn('Direct RPC start_complaint_progress (complaint_id) note:', error.message);
+        } catch (err: any) {
+          console.warn('Direct RPC start_complaint_progress (complaint_id) exception:', err?.message);
+        }
+      }
+
+      // 3. Robust authenticated server API endpoint fallback
+      try {
+        const { data: sessionData } = await supabase.auth.getSession();
+        const token = sessionData?.session?.access_token;
+        if (token) {
+          const apiRes = await fetch('/api/cleaner/start-progress', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${token}`,
+            },
+            body: JSON.stringify({ complaintId }),
+          });
+          const apiData = await apiRes.json().catch(() => null);
+          if (apiRes.ok && apiData?.success) {
+            await this.loadSupabaseData();
+            return { success: true };
+          }
+          if (apiData?.error) {
+            return { success: false, error: apiData.error };
+          }
+        }
+      } catch (err: any) {
+        return { success: false, error: err.message || 'Failed to start pickup work.' };
       }
     }
 
+    // Local / In-memory state transition
     const timestamp = new Date().toISOString();
     const oldStatus = complaint.status;
 

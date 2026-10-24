@@ -17,6 +17,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const app = express();
+
 const PORT = 3000;
 
 app.use(express.json());
@@ -1548,7 +1549,7 @@ app.get('/api/cleaner/my-profile', async (req: Request, res: Response) => {
  * Guarantees changes persist across browser refreshes and resolves locality names.
  */
 app.get('/api/admin/users', async (req: Request, res: Response) => {
-  const authCheck = await verifyAdminCaller(req.headers.authorization);
+  const authCheck = await verifyStaffCaller(req.headers.authorization);
   if (!authCheck.ok) {
     return res.status(authCheck.status).json({ success: false, error: authCheck.error });
   }
@@ -1583,19 +1584,39 @@ app.get('/api/admin/users', async (req: Request, res: Response) => {
     const { data: localitiesData } = await supabaseAdmin.from('localities').select('id, name');
     const localityMap = new Map((localitiesData || []).map((l: any) => [l.id, l.name]));
 
-    // 5. Construct enriched users list
-    const enrichedUsers = (profiles || []).map((p: any) => {
-      const authU = authMap.get(p.id);
+    // 6. Construct enriched users list (combining all Auth users and Profiles)
+    const allUserIds = Array.from(
+      new Set([
+        ...authUsers.map((u) => u.id),
+        ...(profiles || []).map((p: any) => p.id),
+      ])
+    );
+
+    const enrichedUsers = allUserIds.map((userId) => {
+      const p = (profiles || []).find((pr: any) => pr.id === userId) || {};
+      const authU = authMap.get(userId);
       const email = authU?.email || p.email || '';
       const meta = authU?.user_metadata || {};
       const appMeta = authU?.app_metadata || {};
       const supervisorId = p.supervisor_id || meta.supervisor_id || appMeta.supervisor_id || null;
-      const rawRole = (p.role || meta.role || 'resident').toString().toLowerCase();
+      const rawRole = (p.role || meta.role || appMeta.role || 'resident').toString().toLowerCase();
       const role = rawRole === 'admin' ? 'administrator' : rawRole;
-      const status = p.account_status || meta.account_status || 'active';
+      const status = p.account_status || meta.account_status || appMeta.account_status || 'active';
+
+      // Auto-sync active cleaners to profiles table if missing
+      if (role === 'cleaner' && !p.id && authU) {
+        saveProfile({
+          id: userId,
+          fullName: meta.full_name || 'Cleaner',
+          phone: meta.phone || meta.phone_number || '0000000000',
+          role: 'cleaner',
+          accountStatus: status as any,
+          supervisorId,
+        }).catch(() => {});
+      }
 
       return {
-        id: p.id,
+        id: userId,
         email,
         fullName: p.full_name || meta.full_name || 'User',
         phoneNumber: p.phone || p.phone_number || meta.phone || meta.phone_number || '',
@@ -1639,15 +1660,55 @@ app.get('/api/admin/users', async (req: Request, res: Response) => {
       };
     });
 
-    // Build normalized service areas
-    const normalizedAreas = rawServiceAreas.map((sa: any) => ({
-      id: sa.id,
-      cleanerId: sa.cleaner_id,
-      localityId: sa.locality_id,
-      isApproved: sa.is_approved,
-      approvedBy: sa.approved_by,
-      approvedAt: sa.approved_at,
-    }));
+    // Build normalized service areas with locality names
+    const normalizedAreas: any[] = [];
+    const areaKeys = new Set<string>();
+
+    for (const sa of rawServiceAreas) {
+      const cleanerId = sa.cleaner_id || sa.cleanerId;
+      const localityId = sa.locality_id || sa.localityId;
+      if (cleanerId && localityId) {
+        areaKeys.add(`${cleanerId}:${localityId}`);
+        normalizedAreas.push({
+          id: sa.id || `csa-${cleanerId}-${localityId}`,
+          cleanerId,
+          localityId,
+          localityName: localityMap.get(localityId) || 'Locality',
+          isApproved: sa.is_approved !== false,
+          approvedBy: sa.approved_by || null,
+          approvedAt: sa.approved_at || null,
+        });
+      }
+    }
+
+    // Synthesize service areas for cleaners from auth user_metadata if missing from DB table
+    for (const u of enrichedUsers) {
+      if (u.role === 'cleaner') {
+        const authU = authMap.get(u.id);
+        const metaAreas = authU?.user_metadata?.service_areas || authU?.app_metadata?.service_areas;
+        if (Array.isArray(metaAreas)) {
+          for (const locId of metaAreas) {
+            const key = `${u.id}:${locId}`;
+            if (!areaKeys.has(key)) {
+              areaKeys.add(key);
+              const isApproved = u.accountStatus === 'active';
+              normalizedAreas.push({
+                id: `csa-${u.id}-${locId}`,
+                cleanerId: u.id,
+                localityId: locId,
+                localityName: localityMap.get(locId) || 'Locality',
+                isApproved,
+                approvedBy: null,
+                approvedAt: new Date().toISOString(),
+              });
+              if (isApproved) {
+                saveCleanerServiceAreas(u.id, [locId], true).catch(() => {});
+              }
+            }
+          }
+        }
+      }
+    }
 
     return res.json({
       success: true,
@@ -1663,6 +1724,488 @@ app.get('/api/admin/users', async (req: Request, res: Response) => {
   }
 });
 
+/**
+ * Supervisor / Administrator Endpoint: Assign Cleaner to Verified Complaint
+ * Server-side verified assignment fallback to guarantee reliable assignment.
+ */
+app.post('/api/supervisor/assign-cleaner', async (req: Request, res: Response) => {
+  const authCheck = await verifyStaffCaller(req.headers.authorization);
+  if (!authCheck.ok) {
+    return res.status(authCheck.status).json({ success: false, error: authCheck.error });
+  }
+
+  if (!supabaseAdmin) {
+    return res.status(503).json({ success: false, error: 'Supabase admin client unavailable.' });
+  }
+
+  const { complaintId, cleanerId, notes } = req.body || {};
+  if (!complaintId || !cleanerId) {
+    return res.status(400).json({ success: false, error: 'Complaint ID and Cleaner ID are required.' });
+  }
+
+  try {
+    // 1. Fetch complaint
+    const { data: complaint, error: compErr } = await supabaseAdmin
+      .from('complaints')
+      .select('*')
+      .eq('id', complaintId)
+      .maybeSingle();
+
+    if (compErr || !complaint) {
+      return res.status(404).json({ success: false, error: 'Complaint not found.' });
+    }
+
+    if (complaint.status !== 'verified' && complaint.status !== 'assigned') {
+      return res.status(400).json({
+        success: false,
+        error: `A complaint must be verified before assigning a cleaner (current status: ${complaint.status}).`,
+      });
+    }
+
+    // 2. Fetch cleaner details from Auth or Profiles
+    const { data: cleanerAuth } = await supabaseAdmin.auth.admin.getUserById(cleanerId);
+    const meta = cleanerAuth?.user?.user_metadata || {};
+    const appMeta = cleanerAuth?.user?.app_metadata || {};
+
+    const { data: cleanerProfile } = await supabaseAdmin
+      .from('profiles')
+      .select('*')
+      .eq('id', cleanerId)
+      .maybeSingle();
+
+    const cleanerRole = (cleanerProfile?.role || meta.role || appMeta.role || '').toString().toLowerCase();
+    const cleanerStatus = (cleanerProfile?.account_status || meta.account_status || appMeta.account_status || 'active').toString().toLowerCase();
+
+    if (cleanerRole !== 'cleaner') {
+      return res.status(400).json({ success: false, error: 'Selected user does not have cleaner role.' });
+    }
+    if (cleanerStatus !== 'active') {
+      return res.status(400).json({ success: false, error: `Cleaner account is ${cleanerStatus}. Only active cleaners can be assigned.` });
+    }
+
+    // 3. Ensure cleaner exists in public.profiles table so foreign key won't fail
+    if (!cleanerProfile) {
+      await saveProfile({
+        id: cleanerId,
+        fullName: meta.full_name || 'Cleaner',
+        phone: meta.phone || meta.phone_number || '0000000000',
+        role: 'cleaner',
+        accountStatus: 'active',
+        supervisorId: meta.supervisor_id || null,
+      });
+    }
+
+    // 4. Ensure service area is recorded in cleaner_service_areas
+    await saveCleanerServiceAreas(cleanerId, [complaint.locality_id], true, authCheck.callerId);
+
+    // 5. Update complaints record
+    const updatePayload: Record<string, any> = {
+      status: 'assigned',
+      assigned_cleaner_id: cleanerId,
+      supervisor_id: authCheck.callerId,
+      updated_at: new Date().toISOString(),
+    };
+    if (notes) {
+      updatePayload.supervisor_notes = notes;
+    }
+
+    const { error: updateErr } = await supabaseAdmin
+      .from('complaints')
+      .update(updatePayload)
+      .eq('id', complaintId);
+
+    if (updateErr) {
+      return res.status(500).json({ success: false, error: updateErr.message });
+    }
+
+    // 6. Record status history
+    try {
+      await supabaseAdmin.from('complaint_status_history').insert({
+        complaint_id: complaintId,
+        previous_status: complaint.status,
+        new_status: 'assigned',
+        actor_id: authCheck.callerId,
+        note: notes ? `Assigned to cleaner. Notes: ${notes}` : 'Assigned to cleaner for pickup dispatch.',
+        created_at: new Date().toISOString(),
+      });
+    } catch {
+      // Non-blocking history record
+    }
+
+    return res.json({
+      success: true,
+      message: 'Cleaner successfully assigned to complaint.',
+    });
+  } catch (err: any) {
+    return res.status(500).json({
+      success: false,
+      error: err.message || 'Server error assigning cleaner.',
+    });
+  }
+});
+
+/**
+ * Cleaner Endpoint: Start Pickup Work
+ * Transitions complaint status from 'assigned' to 'in_progress'.
+ * Enforces that only the assigned cleaner (or authorized supervisor/administrator) can start work.
+ */
+app.post('/api/cleaner/start-progress', async (req: Request, res: Response) => {
+  const authHeader = req.headers.authorization;
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    return res.status(401).json({
+      success: false,
+      error: 'Unauthorized: Missing or invalid Authorization Bearer token.',
+    });
+  }
+
+  const token = authHeader.replace('Bearer ', '').trim();
+  if (!supabaseAdmin) {
+    return res.status(503).json({
+      success: false,
+      error: 'Supabase admin client unavailable.',
+    });
+  }
+
+  const { complaintId } = req.body || {};
+  if (!complaintId) {
+    return res.status(400).json({
+      success: false,
+      error: 'Complaint ID is required.',
+    });
+  }
+
+  try {
+    // 1. Verify caller session
+    const { data: userData, error: userError } = await supabaseAdmin.auth.getUser(token);
+    if (userError || !userData?.user) {
+      return res.status(401).json({
+        success: false,
+        error: `Authentication failed: ${userError?.message || 'Invalid session'}`,
+      });
+    }
+
+    const callerId = userData.user.id;
+
+    // 2. Check caller profile & role
+    const { data: callerProfile } = await supabaseAdmin
+      .from('profiles')
+      .select('*')
+      .eq('id', callerId)
+      .maybeSingle();
+
+    const meta = userData.user.user_metadata || {};
+    const appMeta = userData.user.app_metadata || {};
+    const rawRole = (callerProfile?.role || meta.role || appMeta.role || '').toString().toLowerCase();
+    const callerRole = rawRole === 'admin' ? 'administrator' : rawRole;
+    const isStaff = callerRole === 'administrator' || callerRole === 'supervisor';
+
+    // 3. Fetch complaint
+    const { data: complaint, error: compErr } = await supabaseAdmin
+      .from('complaints')
+      .select('*')
+      .eq('id', complaintId)
+      .maybeSingle();
+
+    if (compErr || !complaint) {
+      return res.status(404).json({
+        success: false,
+        error: 'Complaint not found.',
+      });
+    }
+
+    // 4. Validate complaint status
+    if (complaint.status !== 'assigned' && complaint.status !== 'awaiting_verification') {
+      return res.status(400).json({
+        success: false,
+        error: `Invalid transition: Only assigned complaints can be marked in progress. Current status: ${complaint.status}`,
+      });
+    }
+
+    // 5. Validate assignment: Only assigned cleaner (or staff) can start work
+    if (!isStaff && complaint.assigned_cleaner_id !== callerId) {
+      return res.status(403).json({
+        success: false,
+        error: 'Access denied: You are not assigned to this complaint.',
+      });
+    }
+
+    // 6. Update complaint status to in_progress
+    const nowIso = new Date().toISOString();
+    const { error: updateErr } = await supabaseAdmin
+      .from('complaints')
+      .update({
+        status: 'in_progress',
+        updated_at: nowIso,
+      })
+      .eq('id', complaintId);
+
+    if (updateErr) {
+      return res.status(500).json({
+        success: false,
+        error: `Failed to update complaint status: ${updateErr.message}`,
+      });
+    }
+
+    // 7. Insert status history audit log
+    try {
+      await supabaseAdmin.from('complaint_status_history').insert({
+        complaint_id: complaintId,
+        previous_status: complaint.status,
+        new_status: 'in_progress',
+        actor_id: callerId,
+        note: 'Cleaner reached waste location and started pickup work on-site.',
+        created_at: nowIso,
+      });
+    } catch {
+      // Non-blocking history audit
+    }
+
+    return res.json({
+      success: true,
+      status: 'in_progress',
+      message: 'Pickup work successfully marked in-progress.',
+    });
+  } catch (err: any) {
+    return res.status(500).json({
+      success: false,
+      error: err.message || 'Server error starting complaint progress.',
+    });
+  }
+});
+
+/**
+ * Supervisor / Administrator Endpoint: Approve Cleaner Completion
+ * Validates supervisor authorization, verifies 'awaiting_verification' status,
+ * confirms photographic completion proof exists (cleaner_after / cleaner_completion),
+ * and transitions status to 'completed'.
+ */
+app.post('/api/supervisor/approve-completion', async (req: Request, res: Response) => {
+  const authCheck = await verifyStaffCaller(req.headers.authorization);
+  if (!authCheck.ok) {
+    return res.status(authCheck.status).json({ success: false, error: authCheck.error });
+  }
+
+  if (!supabaseAdmin) {
+    return res.status(503).json({ success: false, error: 'Supabase admin client unavailable.' });
+  }
+
+  const { complaintId, notes } = req.body || {};
+  if (!complaintId) {
+    return res.status(400).json({ success: false, error: 'Complaint ID is required.' });
+  }
+
+  try {
+    // 1. Fetch complaint
+    const { data: complaint, error: compErr } = await supabaseAdmin
+      .from('complaints')
+      .select('*')
+      .eq('id', complaintId)
+      .maybeSingle();
+
+    if (compErr || !complaint) {
+      return res.status(404).json({ success: false, error: 'Complaint not found.' });
+    }
+
+    if (complaint.status !== 'awaiting_verification') {
+      return res.status(400).json({
+        success: false,
+        error: `Complaint must be awaiting verification to approve completion (current status: ${complaint.status}).`,
+      });
+    }
+
+    // 2. Verify completion photo evidence exists in complaint_photos (matching cleaner_after or cleaner_completion)
+    const { data: photos, error: photoErr } = await supabaseAdmin
+      .from('complaint_photos')
+      .select('id, photo_type')
+      .eq('complaint_id', complaintId);
+
+    if (photoErr) {
+      return res.status(500).json({
+        success: false,
+        error: `Failed to inspect photographic evidence: ${photoErr.message}`,
+      });
+    }
+
+    const hasAfterPhoto = (photos || []).some((p: any) => {
+      const type = (p.photo_type || '').toString().toLowerCase();
+      return type === 'cleaner_after' || type === 'cleaner_completion' || type === 'completion' || type === 'after';
+    });
+
+    if (!hasAfterPhoto) {
+      return res.status(400).json({
+        success: false,
+        error: 'Cannot approve completion: Mandatory after-cleaning photo proof is missing from complaint records.',
+      });
+    }
+
+    // 3. Update complaint status to completed
+    const nowIso = new Date().toISOString();
+    const updatePayload: Record<string, any> = {
+      status: 'completed',
+      updated_at: nowIso,
+    };
+    if (notes && notes.trim()) {
+      updatePayload.supervisor_notes = notes.trim();
+    }
+
+    const { error: updateErr } = await supabaseAdmin
+      .from('complaints')
+      .update(updatePayload)
+      .eq('id', complaintId);
+
+    if (updateErr) {
+      return res.status(500).json({
+        success: false,
+        error: `Failed to update complaint status: ${updateErr.message}`,
+      });
+    }
+
+    return res.json({
+      success: true,
+      status: 'completed',
+      message: 'Complaint completion approved and verified successfully.',
+    });
+  } catch (err: any) {
+    return res.status(500).json({
+      success: false,
+      error: err.message || 'Server error approving complaint completion.',
+    });
+  }
+});
+
+/**
+ * Supervisor / Administrator Endpoint: Return to In-Progress (Rework)
+ * Validates supervisor authorization, verifies 'awaiting_verification' status,
+ * requires explanatory rework note (>= 5 characters), and transitions status back to 'in_progress'.
+ */
+app.post('/api/supervisor/return-to-progress', async (req: Request, res: Response) => {
+  const authCheck = await verifyStaffCaller(req.headers.authorization);
+  if (!authCheck.ok) {
+    return res.status(authCheck.status).json({ success: false, error: authCheck.error });
+  }
+
+  if (!supabaseAdmin) {
+    return res.status(503).json({ success: false, error: 'Supabase admin client unavailable.' });
+  }
+
+  const { complaintId, returnNote, notes } = req.body || {};
+  const actualNote = (returnNote || notes || '').trim();
+
+  if (!complaintId) {
+    return res.status(400).json({ success: false, error: 'Complaint ID is required.' });
+  }
+
+  if (!actualNote || actualNote.length < 5) {
+    return res.status(400).json({
+      success: false,
+      error: 'An explanatory note describing why work must be redone (at least 5 characters) is required.',
+    });
+  }
+
+  try {
+    // 1. Fetch complaint
+    const { data: complaint, error: compErr } = await supabaseAdmin
+      .from('complaints')
+      .select('*')
+      .eq('id', complaintId)
+      .maybeSingle();
+
+    if (compErr || !complaint) {
+      return res.status(404).json({ success: false, error: 'Complaint not found.' });
+    }
+
+    if (complaint.status !== 'awaiting_verification') {
+      return res.status(400).json({
+        success: false,
+        error: `Complaint must be awaiting verification to return to in-progress (current status: ${complaint.status}).`,
+      });
+    }
+
+    // 2. Update complaint status back to in_progress with supervisor rework note
+    const nowIso = new Date().toISOString();
+    const { error: updateErr } = await supabaseAdmin
+      .from('complaints')
+      .update({
+        status: 'in_progress',
+        supervisor_notes: actualNote,
+        updated_at: nowIso,
+      })
+      .eq('id', complaintId);
+
+    if (updateErr) {
+      return res.status(500).json({
+        success: false,
+        error: `Failed to return complaint to in-progress: ${updateErr.message}`,
+      });
+    }
+
+    return res.json({
+      success: true,
+      status: 'in_progress',
+      message: 'Complaint returned to in-progress for cleaner rework.',
+    });
+  } catch (err: any) {
+    return res.status(500).json({
+      success: false,
+      error: err.message || 'Server error returning complaint to in-progress.',
+    });
+  }
+});
+
+/**
+ * Authenticated Endpoint: Generate Signed URL for Private Storage Photo
+ * Allows authenticated participants (supervisors, cleaners, residents) to securely view
+ * photos in the private 'waste-complaint-photos' bucket.
+ */
+app.post('/api/photos/signed-url', async (req: Request, res: Response) => {
+  const authHeader = req.headers.authorization;
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    return res.status(401).json({ success: false, error: 'Unauthorized: Missing Bearer token.' });
+  }
+
+  const token = authHeader.replace('Bearer ', '').trim();
+  if (!supabaseAdmin) {
+    return res.status(503).json({ success: false, error: 'Supabase admin client unavailable.' });
+  }
+
+  const { storagePath, expiresIn = 3600 } = req.body || {};
+  if (!storagePath || typeof storagePath !== 'string') {
+    return res.status(400).json({ success: false, error: 'A valid storagePath is required.' });
+  }
+
+  try {
+    // 1. Verify caller session
+    const { data: userData, error: userError } = await supabaseAdmin.auth.getUser(token);
+    if (userError || !userData?.user) {
+      return res.status(401).json({ success: false, error: 'Invalid or expired user session.' });
+    }
+
+    // 2. Generate signed URL using server admin client on private bucket
+    const cleanPath = storagePath.trim().replace(/^\/+/, '');
+    const { data: signData, error: signError } = await supabaseAdmin.storage
+      .from('waste-complaint-photos')
+      .createSignedUrl(cleanPath, expiresIn);
+
+    if (signError || !signData?.signedUrl) {
+      return res.status(404).json({
+        success: false,
+        error: signError ? signError.message : 'Storage object not found in private bucket.',
+      });
+    }
+
+    return res.json({
+      success: true,
+      signedUrl: signData.signedUrl,
+      expiresIn,
+    });
+  } catch (err: any) {
+    return res.status(500).json({
+      success: false,
+      error: err.message || 'Server error generating signed URL.',
+    });
+  }
+});
+
 // Mount Vite in dev or serve static files in production
 async function startServer() {
   if (process.env.NODE_ENV === 'production') {
@@ -1672,14 +2215,22 @@ async function startServer() {
     });
   } else {
     const vite = await createViteServer({
-      server: { middlewareMode: true },
+      server: { middlewareMode: true, hmr: false },
       appType: 'spa',
     });
     app.use(vite.middlewares);
   }
 
-  app.listen(PORT, '0.0.0.0', () => {
+  const server = app.listen(PORT, '0.0.0.0', () => {
     console.log(`Waste Pickup Portal server running on http://0.0.0.0:${PORT}`);
+  });
+
+  server.on('error', (err: any) => {
+    if (err.code === 'EADDRINUSE') {
+      console.error(`Port ${PORT} is in use.`);
+    } else {
+      console.error('Server error:', err);
+    }
   });
 }
 

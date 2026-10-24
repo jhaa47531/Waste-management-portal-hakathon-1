@@ -49,6 +49,45 @@ export const MAX_PHOTO_SIZE_BYTES = 3 * 1024 * 1024; // 3 MB
 export const ALLOWED_PHOTO_MIME_TYPES = ['image/jpeg', 'image/jpg', 'image/png'];
 
 /**
+ * Checks whether a photo record is a resident initial report photo.
+ * Supports both standard database value 'resident_report' and legacy/frontend value 'resident_initial'.
+ */
+export function isInitialComplaintPhoto(photoType?: string | null): boolean {
+  if (!photoType) return false;
+  const normalized = photoType.trim().toLowerCase();
+  return (
+    normalized === 'resident_report' ||
+    normalized === 'resident_initial' ||
+    normalized === 'initial' ||
+    normalized === 'before'
+  );
+}
+
+/**
+ * Checks whether a photo record is a cleaner completion proof photo.
+ * Supports both standard database value 'cleaner_after' and legacy/frontend value 'cleaner_completion'.
+ */
+export function isCompletionComplaintPhoto(photoType?: string | null): boolean {
+  if (!photoType) return false;
+  const normalized = photoType.trim().toLowerCase();
+  return (
+    normalized === 'cleaner_after' ||
+    normalized === 'cleaner_completion' ||
+    normalized === 'completion' ||
+    normalized === 'after'
+  );
+}
+
+/**
+ * Formats a clean human-readable label for complaint photos.
+ */
+export function getComplaintPhotoLabel(photoType?: string | null): string {
+  if (isInitialComplaintPhoto(photoType)) return 'Resident Initial Evidence';
+  if (isCompletionComplaintPhoto(photoType)) return 'Cleaner Completion Proof';
+  return 'Photographic Evidence';
+}
+
+/**
  * Validates GPS coordinates.
  * Coordinates must be numeric, not NaN, latitude between -90 and 90,
  * longitude between -180 and 180, and not the (0,0) null island placeholder.

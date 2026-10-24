@@ -5,10 +5,11 @@
 
 import React, { useState } from 'react';
 import { UserProfile, Complaint, Locality, CleanerServiceArea } from '../types/index.ts';
-import { MAX_PHOTO_SIZE_BYTES } from '../utils/rules.ts';
+import { MAX_PHOTO_SIZE_BYTES, isInitialComplaintPhoto } from '../utils/rules.ts';
 import { portalStore } from '../services/store.ts';
 import { StatusBadge, UrgencyBadge } from './StatusBadge.tsx';
 import { ComplaintTimeline } from './ComplaintTimeline.tsx';
+import { SignedPhoto } from './SignedPhoto.tsx';
 import {
   HardHat,
   MapPin,
@@ -58,6 +59,10 @@ export const CleanerView: React.FC<CleanerViewProps> = ({
   const [completionError, setCompletionError] = useState<string | null>(null);
   const [isSubmittingCompletion, setIsSubmittingCompletion] = useState(false);
 
+  // Start Pickup Work Loading & Error States
+  const [startingTaskId, setStartingTaskId] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
+
   const isPendingApproval = currentUser.accountStatus === 'pending';
   const isSuspended = currentUser.accountStatus === 'suspended';
 
@@ -70,10 +75,23 @@ export const CleanerView: React.FC<CleanerViewProps> = ({
   const pendingAreas = myServiceAreas.filter((sa) => !sa.isApproved);
 
   const handleStartWork = async (complaintId: string) => {
-    const res = await portalStore.startComplaintProgress(complaintId);
-    if (res.success && selectedTask) {
-      const updated = portalStore.getState().complaints.find((c) => c.id === complaintId);
-      if (updated) setSelectedTask(updated);
+    setStartingTaskId(complaintId);
+    setActionError(null);
+    try {
+      const res = await portalStore.startComplaintProgress(complaintId);
+      if (res.success) {
+        // Refresh selectedTask if open in modal so view seamlessly advances to completion form
+        const updated = portalStore.getState().complaints.find((c) => c.id === complaintId);
+        if (updated && selectedTask?.id === complaintId) {
+          setSelectedTask(updated);
+        }
+      } else {
+        setActionError(res.error || 'Failed to start pickup work. Please try again.');
+      }
+    } catch (err: any) {
+      setActionError(err?.message || 'Unexpected error while starting pickup work.');
+    } finally {
+      setStartingTaskId(null);
     }
   };
 
@@ -319,6 +337,23 @@ export const CleanerView: React.FC<CleanerViewProps> = ({
       {/* TAB 1: ASSIGNED TASKS */}
       {activeTab === 'tasks' && (
         <div className="space-y-4">
+          {/* Action error banner */}
+          {actionError && !selectedTask && (
+            <div className="p-3.5 rounded-2xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800 text-rose-800 dark:text-rose-200 text-xs flex items-center justify-between gap-2 shadow-2xs">
+              <div className="flex items-center gap-2">
+                <AlertCircle className="w-4 h-4 shrink-0 text-rose-600 dark:text-rose-400" />
+                <span>{actionError}</span>
+              </div>
+              <button
+                onClick={() => setActionError(null)}
+                className="p-1 rounded-lg text-rose-600 hover:text-rose-800 dark:text-rose-300 hover:bg-rose-100 dark:hover:bg-rose-900/40 cursor-pointer transition-colors"
+                aria-label="Dismiss error"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+          )}
+
           {myAssignedTasks.length === 0 ? (
             <div className="p-12 text-center bg-white dark:bg-slate-900 rounded-3xl border border-slate-200/80 dark:border-slate-800 shadow-sm space-y-3">
               <div className="w-14 h-14 rounded-2xl bg-slate-100 dark:bg-slate-800 text-slate-400 flex items-center justify-center mx-auto">
@@ -334,7 +369,7 @@ export const CleanerView: React.FC<CleanerViewProps> = ({
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
               {myAssignedTasks.map((task) => {
-                const initialPhoto = task.photos.find((p) => p.photoType === 'resident_initial');
+                const initialPhoto = task.photos.find((p) => isInitialComplaintPhoto(p.photoType));
 
                 return (
                   <div
@@ -344,9 +379,10 @@ export const CleanerView: React.FC<CleanerViewProps> = ({
                     <div>
                       {initialPhoto && (
                         <div className="h-44 bg-slate-950 relative overflow-hidden">
-                          <img
+                          <SignedPhoto
                             src={initialPhoto.url}
-                            alt="Initial waste"
+                            storagePath={initialPhoto.storagePath}
+                            alt="Initial waste report photo"
                             className="w-full h-full object-cover"
                           />
                           <div className="absolute top-2.5 right-2.5">
@@ -417,10 +453,20 @@ export const CleanerView: React.FC<CleanerViewProps> = ({
                       {task.status === 'assigned' && (
                         <button
                           onClick={() => handleStartWork(task.id)}
-                          className="w-full py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold flex items-center justify-center gap-1.5 shadow-xs transition-all cursor-pointer"
+                          disabled={startingTaskId === task.id}
+                          className="w-full py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold flex items-center justify-center gap-1.5 shadow-xs transition-all cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed"
                         >
-                          <PlayCircle className="w-4 h-4" />
-                          <span>Start Pickup Work</span>
+                          {startingTaskId === task.id ? (
+                            <>
+                              <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                              <span>Starting Work...</span>
+                            </>
+                          ) : (
+                            <>
+                              <PlayCircle className="w-4 h-4" />
+                              <span>Start Pickup Work</span>
+                            </>
+                          )}
                         </button>
                       )}
 
@@ -500,7 +546,11 @@ export const CleanerView: React.FC<CleanerViewProps> = ({
                 </p>
               </div>
               <button
-                onClick={() => setSelectedTask(null)}
+                onClick={() => {
+                  setSelectedTask(null);
+                  setActionError(null);
+                  setCompletionError(null);
+                }}
                 className="p-1.5 rounded-xl text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer shrink-0 transition-colors"
                 aria-label="Close modal"
               >
@@ -623,12 +673,28 @@ export const CleanerView: React.FC<CleanerViewProps> = ({
                 <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
                   This complaint has been dispatched to you. Once you arrive at the waste location, click below to mark work in progress.
                 </p>
+                {actionError && (
+                  <div className="p-3.5 rounded-2xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800 text-rose-800 dark:text-rose-200 text-xs flex items-center gap-2">
+                    <AlertCircle className="w-4 h-4 shrink-0 text-rose-600 dark:text-rose-400" />
+                    <span>{actionError}</span>
+                  </div>
+                )}
                 <button
                   onClick={() => handleStartWork(selectedTask.id)}
-                  className="w-full py-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-sm shadow-emerald-600/20 cursor-pointer flex items-center justify-center gap-2 transition-all"
+                  disabled={startingTaskId === selectedTask.id}
+                  className="w-full py-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-sm shadow-emerald-600/20 cursor-pointer flex items-center justify-center gap-2 transition-all disabled:opacity-60 disabled:cursor-not-allowed"
                 >
-                  <PlayCircle className="w-4 h-4" />
-                  <span>Start Pickup Work Now</span>
+                  {startingTaskId === selectedTask.id ? (
+                    <>
+                      <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                      <span>Starting Pickup Work...</span>
+                    </>
+                  ) : (
+                    <>
+                      <PlayCircle className="w-4 h-4" />
+                      <span>Start Pickup Work Now</span>
+                    </>
+                  )}
                 </button>
               </div>
             ) : (

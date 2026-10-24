@@ -15,6 +15,12 @@ import {
 import { portalStore } from '../services/store.ts';
 import { StatusBadge, UrgencyBadge } from './StatusBadge.tsx';
 import { ComplaintTimeline } from './ComplaintTimeline.tsx';
+import { SignedPhoto } from './SignedPhoto.tsx';
+import {
+  isInitialComplaintPhoto,
+  isCompletionComplaintPhoto,
+  getComplaintPhotoLabel,
+} from '../utils/rules.ts';
 import {
   CheckCircle2,
   XCircle,
@@ -36,6 +42,7 @@ import {
   Phone,
   ArrowRight,
   Filter,
+  RefreshCw,
 } from 'lucide-react';
 
 interface SupervisorViewProps {
@@ -82,7 +89,10 @@ export const SupervisorView: React.FC<SupervisorViewProps> = ({
 
   const [returnNote, setReturnNote] = useState('');
   const [returnError, setReturnError] = useState<string | null>(null);
+  const [isReturning, setIsReturning] = useState(false);
   const [approveNotes, setApproveNotes] = useState('');
+  const [approveError, setApproveError] = useState<string | null>(null);
+  const [isApproving, setIsApproving] = useState(false);
 
   // Cleaner Application Review State
   const [cleanerAppNotes, setCleanerAppNotes] = useState<Record<string, string>>({});
@@ -114,15 +124,16 @@ export const SupervisorView: React.FC<SupervisorViewProps> = ({
     return true;
   });
 
-  // Approved cleaners with service areas matching the selected complaint's locality
-  const eligibleCleaners = selectedComplaint
-    ? users.filter((u) => {
-        if (u.role !== 'cleaner' || u.accountStatus !== 'active') return false;
-        return serviceAreas.some(
+  // Approved cleaners with service areas matching the selected complaint's locality, with active team fallback
+  const allActiveCleaners = users.filter((u) => u.role === 'cleaner' && u.accountStatus === 'active');
+  const localityCleaners = selectedComplaint
+    ? allActiveCleaners.filter((u) =>
+        serviceAreas.some(
           (sa) => sa.cleanerId === u.id && sa.localityId === selectedComplaint.localityId && sa.isApproved
-        );
-      })
+        )
+      )
     : [];
+  const eligibleCleaners = localityCleaners.length > 0 ? localityCleaners : allActiveCleaners;
 
   const handleOpenAction = (
     complaint: Complaint,
@@ -146,9 +157,17 @@ export const SupervisorView: React.FC<SupervisorViewProps> = ({
   // Complaint Workflow Actions
   const handleVerify = async () => {
     if (!selectedComplaint) return;
-    const res = await portalStore.verifyComplaint(selectedComplaint.id, urgencySelection, verifyNotes);
+    const targetId = selectedComplaint.id;
+    const res = await portalStore.verifyComplaint(targetId, urgencySelection, verifyNotes);
     if (res.success) {
-      setSelectedComplaint(null);
+      // Smoothly transition to assign cleaner tab so supervisor can proceed immediately
+      const refreshed = portalStore.getState().complaints.find((c) => c.id === targetId);
+      if (refreshed) {
+        setSelectedComplaint(refreshed);
+        setActionTab('assign');
+      } else {
+        setSelectedComplaint(null);
+      }
     }
   };
 
@@ -182,23 +201,43 @@ export const SupervisorView: React.FC<SupervisorViewProps> = ({
 
   const handleApproveCompletion = async () => {
     if (!selectedComplaint) return;
-    const res = await portalStore.approveCompletion(selectedComplaint.id, approveNotes);
-    if (res.success) {
-      setSelectedComplaint(null);
+    setIsApproving(true);
+    setApproveError(null);
+    try {
+      const res = await portalStore.approveCompletion(selectedComplaint.id, approveNotes);
+      if (res.success) {
+        setSelectedComplaint(null);
+        setApproveNotes('');
+      } else {
+        setApproveError(res.error || 'Failed to approve resolution.');
+      }
+    } catch (err: any) {
+      setApproveError(err?.message || 'Unexpected error while approving resolution.');
+    } finally {
+      setIsApproving(false);
     }
   };
 
   const handleReturnToProgress = async () => {
     if (!selectedComplaint) return;
     if (!returnNote.trim() || returnNote.trim().length < 5) {
-      setReturnError('Please enter an explanatory note describing why the work must be redone.');
+      setReturnError('Please enter an explanatory note describing why the work must be redone (minimum 5 characters).');
       return;
     }
-    const res = await portalStore.returnToProgress(selectedComplaint.id, returnNote);
-    if (res.success) {
-      setSelectedComplaint(null);
-    } else {
-      setReturnError(res.error || 'Failed to return complaint.');
+    setIsReturning(true);
+    setReturnError(null);
+    try {
+      const res = await portalStore.returnToProgress(selectedComplaint.id, returnNote);
+      if (res.success) {
+        setSelectedComplaint(null);
+        setReturnNote('');
+      } else {
+        setReturnError(res.error || 'Failed to return complaint to in-progress.');
+      }
+    } catch (err: any) {
+      setReturnError(err?.message || 'Unexpected error while returning complaint.');
+    } finally {
+      setIsReturning(false);
     }
   };
 
@@ -1147,103 +1186,152 @@ export const SupervisorView: React.FC<SupervisorViewProps> = ({
             )}
 
             {/* ACTION 3: AUDIT COMPLETION PROOF */}
-            {actionTab === 'review' && (
-              <div className="space-y-4 text-xs">
-                <div className="grid grid-cols-2 gap-3">
-                  {/* Initial Photo */}
-                  <div className="border border-slate-200 dark:border-slate-800 rounded-2xl overflow-hidden bg-slate-50 dark:bg-slate-800/50 p-2.5 space-y-1.5 shadow-2xs">
-                    <span className="font-bold text-slate-800 dark:text-slate-200 block text-[11px]">
-                      1. Resident Initial Evidence
-                    </span>
-                    {selectedComplaint.photos.find((p) => p.photoType === 'resident_initial') ? (
-                      <img
-                        src={
-                          selectedComplaint.photos.find((p) => p.photoType === 'resident_initial')!.url
-                        }
-                        alt="Initial"
-                        className="w-full h-44 object-cover rounded-xl border border-slate-200 dark:border-slate-700"
-                      />
-                    ) : (
-                      <div className="h-44 flex items-center justify-center text-slate-400">
-                        No initial photo
+            {actionTab === 'review' && (() => {
+              const initialPhoto = selectedComplaint.photos.find((p) => isInitialComplaintPhoto(p.photoType));
+              const completionPhoto = selectedComplaint.photos.find((p) => isCompletionComplaintPhoto(p.photoType));
+
+              return (
+                <div className="space-y-4 text-xs">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    {/* Initial Photo */}
+                    <div className="border border-slate-200 dark:border-slate-800 rounded-2xl overflow-hidden bg-slate-50 dark:bg-slate-800/50 p-2.5 space-y-1.5 shadow-2xs">
+                      <div className="flex items-center justify-between">
+                        <span className="font-bold text-slate-800 dark:text-slate-200 block text-[11px]">
+                          1. Resident Initial Evidence
+                        </span>
+                        {initialPhoto && (
+                          <span className="text-[10px] text-slate-400 font-mono">
+                            {new Date(initialPhoto.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                          </span>
+                        )}
                       </div>
-                    )}
+                      {initialPhoto ? (
+                        <SignedPhoto
+                          src={initialPhoto.url}
+                          storagePath={initialPhoto.storagePath}
+                          alt="Resident Initial Report Photo"
+                          className="w-full h-44 object-cover rounded-xl border border-slate-200 dark:border-slate-700"
+                        />
+                      ) : (
+                        <div className="h-44 flex flex-col items-center justify-center text-slate-400 bg-slate-100/50 dark:bg-slate-800/50 rounded-xl border border-dashed border-slate-200 dark:border-slate-700">
+                          <Eye className="w-6 h-6 mb-1 text-slate-300 dark:text-slate-600" />
+                          <span className="text-xs">No initial photo</span>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Cleaner After Photo */}
+                    <div className="border border-emerald-200 dark:border-emerald-800 rounded-2xl overflow-hidden bg-emerald-50/40 dark:bg-emerald-950/20 p-2.5 space-y-1.5 shadow-2xs">
+                      <div className="flex items-center justify-between">
+                        <span className="font-bold text-emerald-900 dark:text-emerald-300 block text-[11px]">
+                          2. Cleaner After-Cleaning Proof
+                        </span>
+                        {completionPhoto && (
+                          <span className="text-[10px] text-emerald-700 dark:text-emerald-400 font-mono">
+                            {new Date(completionPhoto.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                          </span>
+                        )}
+                      </div>
+                      {completionPhoto ? (
+                        <SignedPhoto
+                          src={completionPhoto.url}
+                          storagePath={completionPhoto.storagePath}
+                          alt="Cleaner After-Cleaning Completion Proof"
+                          className="w-full h-44 object-cover rounded-xl border border-emerald-300 dark:border-emerald-700 ring-1 ring-emerald-400"
+                        />
+                      ) : (
+                        <div className="h-44 flex flex-col items-center justify-center text-slate-400 bg-emerald-50/30 dark:bg-emerald-950/30 rounded-xl border border-dashed border-emerald-200 dark:border-emerald-800">
+                          <AlertTriangle className="w-6 h-6 mb-1 text-amber-500/70" />
+                          <span className="text-xs font-semibold">No completion photo</span>
+                        </div>
+                      )}
+                    </div>
                   </div>
 
-                  {/* Cleaner After Photo */}
-                  <div className="border border-emerald-200 dark:border-emerald-800 rounded-2xl overflow-hidden bg-emerald-50/40 dark:bg-emerald-950/20 p-2.5 space-y-1.5 shadow-2xs">
-                    <span className="font-bold text-emerald-900 dark:text-emerald-300 block text-[11px]">
-                      2. Cleaner After-Cleaning Proof
-                    </span>
-                    {selectedComplaint.photos.find((p) => p.photoType === 'cleaner_completion') ? (
-                      <img
-                        src={
-                          selectedComplaint.photos.find((p) => p.photoType === 'cleaner_completion')!.url
-                        }
-                        alt="Completion"
-                        className="w-full h-44 object-cover rounded-xl border border-emerald-300 dark:border-emerald-700 ring-1 ring-emerald-400"
+                  {/* Supervisor Actions */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2">
+                    <div className="p-3.5 rounded-2xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 space-y-2.5 shadow-2xs">
+                      <span className="font-bold text-emerald-900 dark:text-emerald-200 block">Approve & Sign Off</span>
+                      <input
+                        type="text"
+                        value={approveNotes}
+                        onChange={(e) => setApproveNotes(e.target.value)}
+                        placeholder="Sign-off audit notes..."
+                        className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 text-xs focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500"
                       />
-                    ) : (
-                      <div className="h-44 flex items-center justify-center text-slate-400">
-                        No completion photo
-                      </div>
-                    )}
+                      {approveError && (
+                        <p className="text-[11px] text-rose-600 dark:text-rose-400 font-medium">
+                          {approveError}
+                        </p>
+                      )}
+                      <button
+                        onClick={handleApproveCompletion}
+                        disabled={isApproving}
+                        className="w-full py-2.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white font-bold rounded-xl text-xs flex items-center justify-center gap-1.5 shadow-xs cursor-pointer transition-colors"
+                      >
+                        {isApproving ? (
+                          <>
+                            <RefreshCw className="w-4 h-4 animate-spin" />
+                            <span>Approving Completion...</span>
+                          </>
+                        ) : (
+                          <>
+                            <CheckCircle2 className="w-4 h-4" />
+                            <span>Approve Resolution</span>
+                          </>
+                        )}
+                      </button>
+                    </div>
+
+                    <div className="p-3.5 rounded-2xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800 space-y-2.5 shadow-2xs">
+                      <span className="font-bold text-rose-900 dark:text-rose-200 block">Return for Rework</span>
+                      <input
+                        type="text"
+                        value={returnNote}
+                        onChange={(e) => setReturnNote(e.target.value)}
+                        placeholder="Explanation for rework (min 5 chars)..."
+                        className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 text-xs focus:ring-2 focus:ring-rose-500/20 focus:border-rose-500"
+                      />
+                      {returnError && <p className="text-[11px] text-rose-600 dark:text-rose-400 font-medium">{returnError}</p>}
+                      <button
+                        onClick={handleReturnToProgress}
+                        disabled={isReturning}
+                        className="w-full py-2.5 bg-rose-600 hover:bg-rose-700 disabled:opacity-50 text-white font-bold rounded-xl text-xs flex items-center justify-center gap-1.5 shadow-xs cursor-pointer transition-colors"
+                      >
+                        {isReturning ? (
+                          <>
+                            <RefreshCw className="w-4 h-4 animate-spin" />
+                            <span>Returning to Cleaner...</span>
+                          </>
+                        ) : (
+                          <>
+                            <RotateCcw className="w-4 h-4" />
+                            <span>Return to Cleaner</span>
+                          </>
+                        )}
+                      </button>
+                    </div>
                   </div>
                 </div>
-
-                {/* Supervisor Actions */}
-                <div className="grid grid-cols-2 gap-3 pt-2">
-                  <div className="p-3.5 rounded-2xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 space-y-2.5 shadow-2xs">
-                    <span className="font-bold text-emerald-900 dark:text-emerald-200 block">Approve & Sign Off</span>
-                    <input
-                      type="text"
-                      value={approveNotes}
-                      onChange={(e) => setApproveNotes(e.target.value)}
-                      placeholder="Sign-off audit notes..."
-                      className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 text-xs"
-                    />
-                    <button
-                      onClick={handleApproveCompletion}
-                      className="w-full py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl text-xs flex items-center justify-center gap-1.5 shadow-xs cursor-pointer transition-colors"
-                    >
-                      <CheckCircle2 className="w-4 h-4" />
-                      <span>Approve Resolution</span>
-                    </button>
-                  </div>
-
-                  <div className="p-3.5 rounded-2xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800 space-y-2.5 shadow-2xs">
-                    <span className="font-bold text-rose-900 dark:text-rose-200 block">Return for Rework</span>
-                    <input
-                      type="text"
-                      value={returnNote}
-                      onChange={(e) => setReturnNote(e.target.value)}
-                      placeholder="Explanation for rework..."
-                      className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 text-xs"
-                    />
-                    {returnError && <p className="text-[11px] text-rose-600 dark:text-rose-400">{returnError}</p>}
-                    <button
-                      onClick={handleReturnToProgress}
-                      className="w-full py-2.5 bg-rose-600 hover:bg-rose-700 text-white font-bold rounded-xl text-xs flex items-center justify-center gap-1.5 shadow-xs cursor-pointer transition-colors"
-                    >
-                      <RotateCcw className="w-4 h-4" />
-                      <span>Return to Cleaner</span>
-                    </button>
-                  </div>
-                </div>
-              </div>
-            )}
+              );
+            })()}
 
             {/* DETAILS & TIMELINE */}
             {actionTab === 'details' && (
               <div className="space-y-4 text-xs">
                 {/* Photo Gallery */}
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   {selectedComplaint.photos.map((photo) => (
                     <div key={photo.id} className="rounded-2xl overflow-hidden border border-slate-200 dark:border-slate-800 shadow-2xs">
-                      <img src={photo.url} alt={photo.photoType} className="w-full h-40 object-cover" />
+                      <SignedPhoto
+                        src={photo.url}
+                        storagePath={photo.storagePath}
+                        alt={getComplaintPhotoLabel(photo.photoType)}
+                        className="w-full h-40 object-cover"
+                      />
                       <div className="p-2.5 bg-slate-900 text-white text-[10px] flex justify-between">
                         <span className="font-semibold capitalize">
-                          {photo.photoType === 'resident_initial' ? 'Initial Photo' : 'Completion Proof'}
+                          {getComplaintPhotoLabel(photo.photoType)}
                         </span>
                         <span className="font-mono tabular-nums text-slate-400">
                           {new Date(photo.createdAt).toLocaleDateString()}

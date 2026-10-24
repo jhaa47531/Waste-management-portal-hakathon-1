@@ -65,7 +65,7 @@ export interface ComplaintPhoto {
   id: string;
   complaintId: string;
   uploaderId: string;
-  photoType: 'resident_initial' | 'cleaner_completion';
+  photoType: 'resident_initial' | 'cleaner_completion' | 'resident_report' | 'cleaner_after';
   storagePath: string;
   url: string; // Public or signed URL for display
   mimeType: string;

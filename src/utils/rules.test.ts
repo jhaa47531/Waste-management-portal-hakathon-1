@@ -22,6 +22,9 @@ import {
   validateCleanerAssignmentPayload,
   formatCleanerServiceAreaRecords,
   resolveCleanerLocalityDisplay,
+  isInitialComplaintPhoto,
+  isCompletionComplaintPhoto,
+  getComplaintPhotoLabel,
 } from './rules.ts';
 
 test('validateGpsCoordinates rejects null, undefined, out of bounds, and zero island', () => {
@@ -552,6 +555,141 @@ test('Cleaner dashboard data loading correctly maps assigned supervisor and serv
   assert.equal(mappedAreas[2].localityName, 'Central Market Square');
   assert.equal(mappedAreas.filter((a) => a.isApproved).length, 2);
 });
+
+test('Start Pickup Work: Transition from assigned to in_progress strictly checks cleaner assignment and status invariants', () => {
+  const assignedCleanerId = '11111111-2222-3333-4444-555555555555';
+  const unassignedCleanerId = '99999999-8888-7777-6666-555555555555';
+  const residentId = '33333333-4444-5555-6666-777777777777';
+
+  // 1. Success: Assigned cleaner transitions assigned complaint to in_progress
+  const validStart = canTransitionStatus('assigned', 'in_progress', 'cleaner', {
+    callerId: assignedCleanerId,
+    assignedCleanerId: assignedCleanerId,
+  });
+  assert.equal(validStart.allowed, true);
+  assert.equal(validStart.reason, undefined);
+
+  // 2. Reject: Unassigned cleaner attempts to start work
+  const unauthorizedCleaner = canTransitionStatus('assigned', 'in_progress', 'cleaner', {
+    callerId: unassignedCleanerId,
+    assignedCleanerId: assignedCleanerId,
+  });
+  assert.equal(unauthorizedCleaner.allowed, false);
+  assert.match(unauthorizedCleaner.reason || '', /You can only start progress on complaints assigned to you/);
+
+  // 3. Reject: Resident attempts to start work
+  const residentAttempt = canTransitionStatus('assigned', 'in_progress', 'resident', {
+    callerId: residentId,
+    assignedCleanerId: assignedCleanerId,
+  });
+  assert.equal(residentAttempt.allowed, false);
+  assert.match(residentAttempt.reason || '', /Residents cannot update complaint statuses directly/);
+
+  // 4. Reject: Attempting to start work on an unverified/submitted complaint
+  const unverifiedAttempt = canTransitionStatus('submitted', 'in_progress', 'cleaner', {
+    callerId: assignedCleanerId,
+    assignedCleanerId: assignedCleanerId,
+  });
+  assert.equal(unverifiedAttempt.allowed, false);
+
+  // 5. Reject: Attempting to start work on an already completed complaint
+  const completedAttempt = canTransitionStatus('completed', 'in_progress', 'cleaner', {
+    callerId: assignedCleanerId,
+    assignedCleanerId: assignedCleanerId,
+  });
+  assert.equal(completedAttempt.allowed, false);
+});
+
+test('Photo type recognition matches both database and frontend values interoperably', () => {
+  // Initial photos (database: resident_report, frontend: resident_initial)
+  assert.equal(isInitialComplaintPhoto('resident_report'), true);
+  assert.equal(isInitialComplaintPhoto('resident_initial'), true);
+  assert.equal(isInitialComplaintPhoto('initial'), true);
+  assert.equal(isInitialComplaintPhoto('cleaner_after'), false);
+  assert.equal(isInitialComplaintPhoto(null), false);
+
+  // Completion photos (database: cleaner_after, frontend: cleaner_completion)
+  assert.equal(isCompletionComplaintPhoto('cleaner_after'), true);
+  assert.equal(isCompletionComplaintPhoto('cleaner_completion'), true);
+  assert.equal(isCompletionComplaintPhoto('completion'), true);
+  assert.equal(isCompletionComplaintPhoto('resident_report'), false);
+  assert.equal(isCompletionComplaintPhoto(undefined), false);
+
+  // Labels
+  assert.equal(getComplaintPhotoLabel('resident_report'), 'Resident Initial Evidence');
+  assert.equal(getComplaintPhotoLabel('cleaner_after'), 'Cleaner Completion Proof');
+});
+
+test('Supervisor resolution: Approve Completion validates status, staff role, and photographic proof', () => {
+  const supervisorId = 'sup-uuid-1';
+  const cleanerId = 'cleaner-uuid-1';
+
+  // 1. Valid approval: supervisor approves awaiting_verification with completion photo proof
+  const validApproval = canTransitionStatus('awaiting_verification', 'completed', 'supervisor', {
+    callerId: supervisorId,
+    hasAfterPhoto: true,
+  });
+  assert.equal(validApproval.allowed, true);
+
+  // 2. Reject: Missing completion photo proof
+  const noPhotoApproval = canTransitionStatus('awaiting_verification', 'completed', 'supervisor', {
+    callerId: supervisorId,
+    hasAfterPhoto: false,
+  });
+  assert.equal(noPhotoApproval.allowed, false);
+  assert.match(noPhotoApproval.reason || '', /without verified after-cleaning photo evidence/);
+
+  // 3. Reject: Non-staff role (cleaner or resident) attempts to approve completion
+  const cleanerAttempt = canTransitionStatus('awaiting_verification', 'completed', 'cleaner', {
+    callerId: cleanerId,
+    hasAfterPhoto: true,
+  });
+  assert.equal(cleanerAttempt.allowed, false);
+  assert.match(cleanerAttempt.reason || '', /Only a supervisor or administrator can approve completion/);
+
+  // 4. Reject: Attempting to approve complaint that is not in awaiting_verification (e.g. submitted)
+  const invalidStatusAttempt = canTransitionStatus('submitted', 'completed', 'supervisor', {
+    callerId: supervisorId,
+    hasAfterPhoto: true,
+  });
+  assert.equal(invalidStatusAttempt.allowed, false);
+});
+
+test('Supervisor resolution: Return to In-Progress validates staff role, status, and rework notes', () => {
+  const supervisorId = 'sup-uuid-1';
+  const cleanerId = 'cleaner-uuid-1';
+
+  // 1. Valid return: supervisor returns awaiting_verification with explanatory note
+  const validReturn = canTransitionStatus('awaiting_verification', 'in_progress', 'supervisor', {
+    callerId: supervisorId,
+    returnNote: 'Waste residue remained on curb. Please clear thoroughly.',
+  });
+  assert.equal(validReturn.allowed, true);
+
+  // 2. Reject: Missing or too short rework note
+  const shortNoteReturn = canTransitionStatus('awaiting_verification', 'in_progress', 'supervisor', {
+    callerId: supervisorId,
+    returnNote: 'redo',
+  });
+  assert.equal(shortNoteReturn.allowed, false);
+  assert.match(shortNoteReturn.reason || '', /explanatory note is required/);
+
+  // 3. Reject: Non-staff role (cleaner) attempts to return to in_progress
+  const cleanerReturn = canTransitionStatus('awaiting_verification', 'in_progress', 'cleaner', {
+    callerId: cleanerId,
+    returnNote: 'Want to redo the work again.',
+  });
+  assert.equal(cleanerReturn.allowed, false);
+  assert.match(cleanerReturn.reason || '', /Only a supervisor or administrator can return tasks to in-progress/);
+
+  // 4. Reject: Attempting to return complaint that is not awaiting_verification (e.g. assigned)
+  const wrongStatusReturn = canTransitionStatus('assigned', 'in_progress', 'supervisor', {
+    callerId: supervisorId,
+    returnNote: 'Please start working on it.',
+  });
+  assert.equal(wrongStatusReturn.allowed, false);
+});
+
 
 
 
