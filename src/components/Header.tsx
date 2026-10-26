@@ -3,10 +3,9 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React from 'react';
+import React, { useState } from 'react';
 import { UserProfile, UserRole } from '../types/index.ts';
 import { portalStore } from '../services/store.ts';
-import { useTheme } from '../services/theme.ts';
 import {
   Trash2,
   Users,
@@ -16,9 +15,10 @@ import {
   LogOut,
   LogIn,
   UserPlus,
-  Sun,
-  Moon,
-  Sparkles,
+  Info,
+  Radio,
+  X,
+  ShieldCheck,
 } from 'lucide-react';
 
 interface HeaderProps {
@@ -30,128 +30,207 @@ export const Header: React.FC<HeaderProps> = ({
   currentUser,
   onOpenAuthModal,
 }) => {
-  const { theme, toggleTheme } = useTheme();
+  const [isAboutOpen, setIsAboutOpen] = useState(false);
 
-  const roleColors: Record<UserRole, { badge: string; label: string; icon: React.ReactNode }> = {
+  const roleConfigs: Record<
+    UserRole,
+    { label: string; tag: string; icon: React.ReactNode; glow: string; border: string }
+  > = {
     resident: {
-      badge: 'bg-emerald-50 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800',
-      label: 'Resident',
-      icon: <Users className="w-3.5 h-3.5" />,
+      label: 'RESIDENT',
+      tag: '01',
+      icon: <Users className="w-3.5 h-3.5 text-emerald-400" />,
+      glow: 'shadow-[0_0_12px_rgba(16,185,129,0.2)]',
+      border: 'border-emerald-500/30 text-emerald-400',
     },
     cleaner: {
-      badge: 'bg-amber-50 dark:bg-amber-950/50 text-amber-700 dark:text-amber-300 border-amber-200 dark:border-amber-800',
-      label: 'Cleaner',
-      icon: <HardHat className="w-3.5 h-3.5" />,
+      label: 'FIELD CLEANER',
+      tag: '02',
+      icon: <HardHat className="w-3.5 h-3.5 text-amber-400" />,
+      glow: 'shadow-[0_0_12px_rgba(245,158,11,0.2)]',
+      border: 'border-amber-500/30 text-amber-400',
     },
     supervisor: {
-      badge: 'bg-blue-50 dark:bg-blue-950/50 text-blue-700 dark:text-blue-300 border-blue-200 dark:border-blue-800',
-      label: 'Supervisor',
-      icon: <UserCheck className="w-3.5 h-3.5" />,
+      label: 'SUPERVISOR',
+      tag: '03',
+      icon: <UserCheck className="w-3.5 h-3.5 text-blue-400" />,
+      glow: 'shadow-[0_0_12px_rgba(59,130,246,0.2)]',
+      border: 'border-blue-500/30 text-blue-400',
     },
     administrator: {
-      badge: 'bg-purple-50 dark:bg-purple-950/50 text-purple-700 dark:text-purple-300 border-purple-200 dark:border-purple-800',
-      label: 'Admin',
-      icon: <ShieldAlert className="w-3.5 h-3.5" />,
+      label: 'ADMINISTRATOR',
+      tag: '04',
+      icon: <ShieldAlert className="w-3.5 h-3.5 text-cyan-400" />,
+      glow: 'shadow-[0_0_12px_rgba(6,182,212,0.2)]',
+      border: 'border-cyan-500/30 text-cyan-400',
     },
     admin: {
-      badge: 'bg-purple-50 dark:bg-purple-950/50 text-purple-700 dark:text-purple-300 border-purple-200 dark:border-purple-800',
-      label: 'Admin',
-      icon: <ShieldAlert className="w-3.5 h-3.5" />,
+      label: 'ADMINISTRATOR',
+      tag: '04',
+      icon: <ShieldAlert className="w-3.5 h-3.5 text-cyan-400" />,
+      glow: 'shadow-[0_0_12px_rgba(6,182,212,0.2)]',
+      border: 'border-cyan-500/30 text-cyan-400',
     },
   };
 
-  const currentRoleMeta = currentUser ? roleColors[currentUser.role] : null;
+  const currentRoleMeta = currentUser ? roleConfigs[currentUser.role] : null;
 
   return (
-    <header className="sticky top-0 z-40 bg-white/90 dark:bg-slate-900/90 backdrop-blur-md border-b border-slate-200/80 dark:border-slate-800 transition-colors">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="flex items-center justify-between h-16 gap-3">
-          {/* Logo & Portal Identity */}
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-emerald-600 via-emerald-600 to-teal-700 text-white flex items-center justify-center shadow-md shadow-emerald-500/20 ring-1 ring-white/20">
-              <Trash2 className="w-5 h-5" />
-            </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <span className="font-extrabold text-slate-900 dark:text-white text-base tracking-tight">
-                  CivicPickup
-                </span>
-                <span className="hidden sm:inline-flex items-center gap-1 text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded-full bg-emerald-50 dark:bg-emerald-950/70 text-emerald-800 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800">
-                  Municipal Portal
-                </span>
+    <>
+      <header className="sticky top-0 z-40 bg-[#0b0d10]/90 backdrop-blur-md border-b border-white/[0.08] text-slate-100 transition-colors">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="flex items-center justify-between h-16 gap-3">
+            {/* Minimal Typewriter Logo */}
+            <div className="flex items-center gap-3">
+              <div className="w-9 h-9 rounded-xl bg-[#12171f] border border-emerald-500/30 flex items-center justify-center text-emerald-400 shadow-[0_0_15px_rgba(16,185,129,0.15)] group transition-transform hover:scale-105">
+                <Trash2 className="w-4 h-4" />
               </div>
-              <p className="text-[11px] text-slate-500 dark:text-slate-400 hidden md:block">
-                Immediate Waste Reporting, Dispatch & Verification System
-              </p>
-            </div>
-          </div>
-
-          {/* Right Action Bar */}
-          <div className="flex items-center gap-2 sm:gap-3">
-            {/* Theme Toggle Button */}
-            <button
-              onClick={toggleTheme}
-              className="p-2 rounded-xl border border-slate-200 dark:border-slate-700/80 bg-slate-50/80 dark:bg-slate-800/80 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 transition-all cursor-pointer shadow-2xs"
-              title={theme === 'dark' ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
-              aria-label={theme === 'dark' ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
-            >
-              {theme === 'dark' ? (
-                <Sun className="w-4 h-4 text-amber-400" />
-              ) : (
-                <Moon className="w-4 h-4 text-slate-600" />
-              )}
-            </button>
-
-            {/* Authenticated User or Sign In */}
-            {currentUser && currentRoleMeta ? (
-              <div className="flex items-center gap-2">
-                <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/80 dark:bg-slate-800/70 shadow-2xs">
-                  <span
-                    className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md border text-[11px] font-bold ${currentRoleMeta.badge}`}
-                  >
-                    {currentRoleMeta.icon}
-                    {currentRoleMeta.label}
+              <div className="flex flex-col">
+                <div className="flex items-center gap-2">
+                  <span className="font-mono-display font-bold tracking-widest uppercase text-sm text-white">
+                    CivicPickup
                   </span>
-                  <div className="hidden sm:block text-left max-w-[140px] truncate">
-                    <p className="text-xs font-bold text-slate-900 dark:text-slate-100 leading-none truncate">
-                      {currentUser.fullName}
-                    </p>
-                    <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5 leading-none truncate">
-                      {currentUser.email}
-                    </p>
-                  </div>
+                  <span className="inline-flex items-center gap-1 font-mono-display text-[9px] uppercase tracking-wider px-1.5 py-0.5 rounded-full bg-emerald-950/60 text-emerald-400 border border-emerald-500/30">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                    v2.4
+                  </span>
                 </div>
+                <span className="text-[10px] text-slate-400 font-mono hidden md:block">
+                  MUNICIPAL SANITATION DISPATCH
+                </span>
+              </div>
+            </div>
 
-                <button
-                  onClick={() => portalStore.signOut()}
-                  className="p-2 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-800/80 hover:bg-rose-50 dark:hover:bg-rose-950/40 hover:text-rose-600 hover:border-rose-200 dark:hover:border-rose-800 text-slate-500 dark:text-slate-400 transition-colors cursor-pointer shadow-2xs"
-                  title="Sign Out"
-                  aria-label="Sign Out"
-                >
-                  <LogOut className="w-4 h-4" />
-                </button>
-              </div>
-            ) : (
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={() => onOpenAuthModal('resident', 'login')}
-                  className="px-3 py-1.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs font-bold hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 flex items-center gap-1.5 transition-colors cursor-pointer shadow-2xs"
-                >
-                  <LogIn className="w-3.5 h-3.5 text-slate-500 dark:text-slate-400" />
-                  <span>Sign In</span>
-                </button>
-                <button
-                  onClick={() => onOpenAuthModal('resident', 'register')}
-                  className="px-3.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold shadow-xs shadow-emerald-600/20 flex items-center gap-1.5 transition-all cursor-pointer"
-                >
-                  <UserPlus className="w-3.5 h-3.5" />
-                  <span>Register</span>
-                </button>
-              </div>
-            )}
+            {/* Navigation links & Outline Pill Buttons */}
+            <div className="flex items-center gap-2.5">
+              {/* Minimal About Trigger */}
+              <button
+                type="button"
+                onClick={() => setIsAboutOpen(true)}
+                className="hidden sm:inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-white/10 text-xs font-mono text-slate-300 hover:text-white hover:border-emerald-500/40 hover:bg-white/[0.03] transition-all cursor-pointer"
+              >
+                <Info className="w-3.5 h-3.5 text-slate-400" />
+                <span>Protocol</span>
+              </button>
+
+              {/* Authenticated User Status or Auth Options */}
+              {currentUser && currentRoleMeta ? (
+                <div className="flex items-center gap-2">
+                  <div className={`flex items-center gap-2 px-3 py-1.5 rounded-full border ${currentRoleMeta.border} bg-[#12161c] ${currentRoleMeta.glow}`}>
+                    <span className="font-mono-display text-[10px] px-1.5 py-0.5 rounded-md bg-white/5 font-bold">
+                      {currentRoleMeta.tag}
+                    </span>
+                    <span className="inline-flex items-center gap-1 font-mono-display text-[11px] font-bold">
+                      {currentRoleMeta.icon}
+                      {currentRoleMeta.label}
+                    </span>
+                    <span className="hidden lg:inline text-xs font-mono text-slate-300 border-l border-white/10 pl-2">
+                      {currentUser.fullName}
+                    </span>
+                  </div>
+
+                  <button
+                    onClick={() => portalStore.signOut()}
+                    className="p-2 rounded-full border border-white/10 bg-[#12161c] hover:border-rose-500/40 hover:text-rose-400 hover:shadow-[0_0_12px_rgba(244,63,94,0.15)] text-slate-400 transition-all cursor-pointer"
+                    title="Sign Out"
+                    aria-label="Sign Out"
+                  >
+                    <LogOut className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              ) : (
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => onOpenAuthModal('resident', 'login')}
+                    className="px-3.5 py-1.5 rounded-full border border-white/10 hover:border-white/20 bg-transparent text-xs font-mono font-medium text-slate-200 hover:text-white flex items-center gap-1.5 transition-all cursor-pointer"
+                  >
+                    <LogIn className="w-3.5 h-3.5 text-slate-400" />
+                    <span>SIGN IN</span>
+                  </button>
+                  <button
+                    onClick={() => onOpenAuthModal('resident', 'register')}
+                    className="px-4 py-1.5 rounded-full border border-emerald-500/40 bg-emerald-950/40 hover:bg-emerald-900/50 text-xs font-mono font-bold text-emerald-300 shadow-[0_0_15px_rgba(16,185,129,0.2)] flex items-center gap-1.5 transition-all cursor-pointer"
+                  >
+                    <UserPlus className="w-3.5 h-3.5 text-emerald-400" />
+                    <span>REGISTER</span>
+                  </button>
+                </div>
+              )}
+            </div>
           </div>
         </div>
-      </div>
-    </header>
+      </header>
+
+      {/* Minimal Protocol Info Dialog */}
+      {isAboutOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-xs animate-in fade-in duration-150">
+          <div className="w-full max-w-lg rounded-2xl bg-[#0f1217] border border-white/10 p-6 text-slate-100 shadow-2xl space-y-5">
+            <div className="flex items-center justify-between border-b border-white/10 pb-3">
+              <div className="flex items-center gap-2">
+                <span className="w-2 h-2 rounded-full bg-emerald-400" />
+                <h3 className="font-mono-display uppercase tracking-widest text-xs font-bold text-white">
+                  MUNICIPAL RESOLUTION ARCHITECTURE
+                </h3>
+              </div>
+              <button
+                onClick={() => setIsAboutOpen(false)}
+                className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-white/5 transition-colors cursor-pointer"
+                aria-label="Close dialog"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <p className="text-xs text-slate-300 leading-relaxed font-sans">
+              CivicPickup is a strict 4-role municipal sanitation system ensuring zero fraudulent reports through automated browser GPS verification, dual photographic evidence, and auditable supervisor triage.
+            </p>
+
+            <div className="space-y-2.5">
+              <div className="p-3 rounded-xl bg-[#141820] border border-white/5 flex items-start gap-3">
+                <span className="font-mono-display text-xs text-emerald-400 font-bold">01</span>
+                <div>
+                  <h4 className="text-xs font-mono uppercase text-white font-bold">Resident Report</h4>
+                  <p className="text-[11px] text-slate-400 mt-0.5">Mandatory GPS coords + photo (&le;3MB) generates unique tracking ID.</p>
+                </div>
+              </div>
+
+              <div className="p-3 rounded-xl bg-[#141820] border border-white/5 flex items-start gap-3">
+                <span className="font-mono-display text-xs text-cyan-400 font-bold">02</span>
+                <div>
+                  <h4 className="text-xs font-mono uppercase text-white font-bold">Supervisor Verification</h4>
+                  <p className="text-[11px] text-slate-400 mt-0.5">Supervisor validates authenticity via telephone contact before cleaner dispatch.</p>
+                </div>
+              </div>
+
+              <div className="p-3 rounded-xl bg-[#141820] border border-white/5 flex items-start gap-3">
+                <span className="font-mono-display text-xs text-amber-400 font-bold">03</span>
+                <div>
+                  <h4 className="text-xs font-mono uppercase text-white font-bold">Cleaner Execution</h4>
+                  <p className="text-[11px] text-slate-400 mt-0.5">Assigned cleaner clears area and captures mandatory after-cleaning photo.</p>
+                </div>
+              </div>
+
+              <div className="p-3 rounded-xl bg-[#141820] border border-white/5 flex items-start gap-3">
+                <span className="font-mono-display text-xs text-purple-400 font-bold">04</span>
+                <div>
+                  <h4 className="text-xs font-mono uppercase text-white font-bold">Photo Audit & Sign-off</h4>
+                  <p className="text-[11px] text-slate-400 mt-0.5">Supervisor audits side-by-side evidence to permanently close the issue.</p>
+                </div>
+              </div>
+            </div>
+
+            <div className="pt-2 text-right">
+              <button
+                type="button"
+                onClick={() => setIsAboutOpen(false)}
+                className="px-4 py-2 rounded-xl bg-white/10 hover:bg-white/15 text-xs font-mono font-bold text-white transition-colors cursor-pointer"
+              >
+                CLOSE
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
   );
 };

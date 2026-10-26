@@ -7,6 +7,7 @@ import React, { useState } from 'react';
 import { UserProfile, Complaint, Locality, CleanerServiceArea } from '../types/index.ts';
 import { MAX_PHOTO_SIZE_BYTES, isInitialComplaintPhoto } from '../utils/rules.ts';
 import { portalStore } from '../services/store.ts';
+import { compressImageFile } from '../utils/imageCompressor.ts';
 import { StatusBadge, UrgencyBadge } from './StatusBadge.tsx';
 import { ComplaintTimeline } from './ComplaintTimeline.tsx';
 import { SignedPhoto } from './SignedPhoto.tsx';
@@ -28,6 +29,10 @@ import {
   RotateCcw,
   Sparkles,
   ArrowRight,
+  Phone,
+  RefreshCw,
+  Trash2,
+  Inbox,
 } from 'lucide-react';
 
 interface CleanerViewProps {
@@ -55,6 +60,12 @@ export const CleanerView: React.FC<CleanerViewProps> = ({
     dataUrl: string;
     rawFile?: File;
   } | null>(null);
+  const [compressionInfo, setCompressionInfo] = useState<{
+    originalKb: number;
+    compressedKb: number;
+    savedPercent: number;
+  } | null>(null);
+  const [isCompressing, setIsCompressing] = useState(false);
   const [completionNotes, setCompletionNotes] = useState('');
   const [completionError, setCompletionError] = useState<string | null>(null);
   const [isSubmittingCompletion, setIsSubmittingCompletion] = useState(false);
@@ -66,7 +77,7 @@ export const CleanerView: React.FC<CleanerViewProps> = ({
   const isPendingApproval = currentUser.accountStatus === 'pending';
   const isSuspended = currentUser.accountStatus === 'suspended';
 
-  // Strict Cleaner Filter: Cleaner can access ONLY complaints assigned to them!
+  // Strict Cleaner Isolation: Cleaner can access ONLY complaints assigned to them
   const myAssignedTasks = complaints.filter((c) => c.assignedCleanerId === currentUser.id);
 
   // Service areas belonging to this cleaner
@@ -74,13 +85,18 @@ export const CleanerView: React.FC<CleanerViewProps> = ({
   const approvedAreas = myServiceAreas.filter((sa) => sa.isApproved);
   const pendingAreas = myServiceAreas.filter((sa) => !sa.isApproved);
 
+  // Task metrics
+  const pendingPickupTasks = myAssignedTasks.filter((c) => c.status === 'assigned');
+  const inProgressTasks = myAssignedTasks.filter((c) => c.status === 'in_progress');
+  const awaitingVerificationTasks = myAssignedTasks.filter((c) => c.status === 'awaiting_verification');
+  const completedTasks = myAssignedTasks.filter((c) => c.status === 'completed');
+
   const handleStartWork = async (complaintId: string) => {
     setStartingTaskId(complaintId);
     setActionError(null);
     try {
       const res = await portalStore.startComplaintProgress(complaintId);
       if (res.success) {
-        // Refresh selectedTask if open in modal so view seamlessly advances to completion form
         const updated = portalStore.getState().complaints.find((c) => c.id === complaintId);
         if (updated && selectedTask?.id === complaintId) {
           setSelectedTask(updated);
@@ -95,11 +111,10 @@ export const CleanerView: React.FC<CleanerViewProps> = ({
     }
   };
 
-  const handlePhotoSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handlePhotoSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     setCompletionError(null);
-    setCompletionPhotoPreview(null);
-    setCompletionFileMeta(null);
+    setCompressionInfo(null);
 
     if (!file) return;
 
@@ -109,25 +124,32 @@ export const CleanerView: React.FC<CleanerViewProps> = ({
       return;
     }
 
-    if (file.size > MAX_PHOTO_SIZE_BYTES) {
-      const mb = (file.size / (1024 * 1024)).toFixed(2);
-      setCompletionError(`Photo is too large (${mb} MB). Maximum allowed size is 3 MB.`);
+    if (file.size > MAX_PHOTO_SIZE_BYTES * 3) {
+      setCompletionError('Photo file is too large. Please choose a lighter file.');
       return;
     }
 
-    const reader = new FileReader();
-    reader.onload = () => {
-      const result = reader.result as string;
-      setCompletionPhotoPreview(result);
+    setIsCompressing(true);
+    try {
+      const compressed = await compressImageFile(file, 1600, 0.84);
+      setCompletionPhotoPreview(compressed.dataUrl);
       setCompletionFileMeta({
-        name: file.name,
-        mimeType: file.type,
-        sizeBytes: file.size,
-        dataUrl: result,
-        rawFile: file,
+        name: compressed.file.name,
+        mimeType: compressed.file.type,
+        sizeBytes: compressed.compressedSize,
+        dataUrl: compressed.dataUrl,
+        rawFile: compressed.file,
       });
-    };
-    reader.readAsDataURL(file);
+      setCompressionInfo({
+        originalKb: Math.round(compressed.originalSize / 1024),
+        compressedKb: Math.round(compressed.compressedSize / 1024),
+        savedPercent: compressed.reductionPercentage,
+      });
+    } catch (err: any) {
+      setCompletionError('Could not process photo: ' + (err?.message || 'error'));
+    } finally {
+      setIsCompressing(false);
+    }
   };
 
   const handleSubmitCompletion = async (e: React.FormEvent) => {
@@ -151,334 +173,266 @@ export const CleanerView: React.FC<CleanerViewProps> = ({
     if (res.success) {
       setCompletionPhotoPreview(null);
       setCompletionFileMeta(null);
+      setCompressionInfo(null);
       setCompletionNotes('');
       setSelectedTask(null);
     } else {
-      setCompletionError(res.error || 'Failed to submit completion.');
+      setCompletionError(res.error || 'Failed to submit proof. Please retry.');
     }
   };
-
-  const resolveLocName = (sa: CleanerServiceArea): string => {
-    if (sa.localityName && sa.localityName !== 'Locality') {
-      return sa.localityName;
-    }
-    const match = localities.find((l) => l.id === sa.localityId);
-    return match ? match.name : sa.localityName || 'Locality';
-  };
-
-  // If cleaner account is pending review, show clear application status view
-  if (isPendingApproval || isSuspended) {
-    return (
-      <div className="space-y-6">
-        <div
-          className={`p-6 sm:p-8 rounded-3xl border shadow-sm ${
-            isPendingApproval
-              ? 'bg-amber-50 dark:bg-amber-950/40 border-amber-200 dark:border-amber-800 text-amber-950 dark:text-amber-100'
-              : 'bg-rose-50 dark:bg-rose-950/40 border-rose-200 dark:border-rose-800 text-rose-950 dark:text-rose-100'
-          }`}
-        >
-          <div className="flex flex-col sm:flex-row items-start gap-4">
-            <div
-              className={`p-3.5 rounded-2xl shrink-0 ${
-                isPendingApproval
-                  ? 'bg-amber-100 dark:bg-amber-900/60 text-amber-700 dark:text-amber-300'
-                  : 'bg-rose-100 dark:bg-rose-900/60 text-rose-700 dark:text-rose-300'
-              }`}
-            >
-              <Clock className="w-8 h-8" />
-            </div>
-            <div className="space-y-3 flex-1">
-              <div className="flex flex-wrap items-center gap-2">
-                <h3 className="text-lg font-black tracking-tight">
-                  {isPendingApproval
-                    ? 'Cleaner Application Under Supervisor Review'
-                    : 'Cleaner Account Not Active'}
-                </h3>
-                <span
-                  className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider ${
-                    isPendingApproval
-                      ? 'bg-amber-200 dark:bg-amber-900 text-amber-900 dark:text-amber-200'
-                      : 'bg-rose-200 dark:bg-rose-900 text-rose-900 dark:text-rose-200'
-                  }`}
-                >
-                  {currentUser.accountStatus}
-                </span>
-              </div>
-              <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed max-w-2xl">
-                {isPendingApproval
-                  ? 'Your cleaner profile and requested preferred service localities have been registered. Operational assignments and cleaning actions remain locked until an authorized municipal supervisor reviews and approves your application.'
-                  : 'Your account is currently suspended or inactive. Please contact your municipal operations supervisor.'}
-              </p>
-
-              <div className="pt-3 border-t border-amber-200/60 dark:border-amber-800/60">
-                <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 block mb-2">
-                  Requested Service Localities ({myServiceAreas.length}):
-                </span>
-                <div className="flex flex-wrap gap-2">
-                  {myServiceAreas.map((sa) => (
-                    <span
-                      key={sa.localityId}
-                      className="px-3 py-1.5 rounded-xl text-xs font-semibold bg-white dark:bg-slate-800 border border-amber-200 dark:border-amber-800 text-slate-800 dark:text-slate-200 flex items-center gap-1.5 shadow-2xs"
-                    >
-                      <MapPin className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
-                      {resolveLocName(sa)}
-                      <span className="text-[10px] font-bold text-amber-700 dark:text-amber-300 uppercase">
-                        (Pending)
-                      </span>
-                    </span>
-                  ))}
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-    );
-  }
 
   return (
     <div className="space-y-6">
-      {/* Cleaner Dashboard Summary Cards */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
-        <div className="p-4 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200/80 dark:border-slate-800 shadow-2xs space-y-1">
-          <span className="text-[10px] uppercase tracking-wider font-bold text-slate-400 dark:text-slate-500">
-            Total Assigned
-          </span>
-          <p className="text-2xl font-black font-mono tabular-nums text-slate-900 dark:text-white">
-            {myAssignedTasks.length}
-          </p>
-          <span className="text-[11px] text-slate-500 dark:text-slate-400">Pickup requests</span>
-        </div>
-
-        <div className="p-4 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200/80 dark:border-slate-800 shadow-2xs space-y-1">
-          <span className="text-[10px] uppercase tracking-wider font-bold text-blue-600 dark:text-blue-400">
-            Pending Start
-          </span>
-          <p className="text-2xl font-black font-mono tabular-nums text-blue-700 dark:text-blue-300">
-            {myAssignedTasks.filter((t) => t.status === 'assigned').length}
-          </p>
-          <span className="text-[11px] text-slate-500 dark:text-slate-400">Ready to dispatch</span>
-        </div>
-
-        <div className="p-4 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200/80 dark:border-slate-800 shadow-2xs space-y-1">
-          <span className="text-[10px] uppercase tracking-wider font-bold text-purple-600 dark:text-purple-400">
-            In Progress
-          </span>
-          <p className="text-2xl font-black font-mono tabular-nums text-purple-700 dark:text-purple-300">
-            {myAssignedTasks.filter((t) => t.status === 'in_progress').length}
-          </p>
-          <span className="text-[11px] text-slate-500 dark:text-slate-400">Active on-site</span>
-        </div>
-
-        <div className="p-4 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200/80 dark:border-slate-800 shadow-2xs space-y-1">
-          <span className="text-[10px] uppercase tracking-wider font-bold text-emerald-600 dark:text-emerald-400">
-            Completed
-          </span>
-          <p className="text-2xl font-black font-mono tabular-nums text-emerald-700 dark:text-emerald-300">
-            {myAssignedTasks.filter((t) => t.status === 'completed' || t.status === 'awaiting_verification').length}
-          </p>
-          <span className="text-[11px] text-slate-500 dark:text-slate-400">Resolved / Review</span>
-        </div>
-
-        <div className="p-4 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200/80 dark:border-slate-800 shadow-2xs space-y-1 col-span-2 sm:col-span-1">
-          <span className="text-[10px] uppercase tracking-wider font-bold text-slate-400 dark:text-slate-500">
-            Supervisor
-          </span>
-          <div className="flex items-center gap-1.5 mt-1">
-            <ShieldCheck className="w-4 h-4 text-blue-600 dark:text-blue-400 shrink-0" />
-            <p className="text-xs font-bold text-slate-900 dark:text-white truncate">
-              {currentUser.supervisorName || 'Unassigned'}
+      {/* Account Status Warnings */}
+      {isPendingApproval && (
+        <div className="p-4 rounded-2xl bg-amber-950/40 border border-amber-500/40 text-amber-300 text-xs flex items-start gap-3">
+          <AlertCircle className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
+          <div className="space-y-1">
+            <h4 className="font-mono font-bold uppercase">ACCOUNT PENDING SUPERVISOR VERIFICATION</h4>
+            <p className="leading-relaxed">
+              Your cleaner application is currently being reviewed by municipal supervisors. You will receive assignments once your service sectors are authorized.
             </p>
           </div>
-          <span className="text-[11px] text-slate-500 dark:text-slate-400">Assigned Lead</span>
+        </div>
+      )}
+
+      {isSuspended && (
+        <div className="p-4 rounded-2xl bg-rose-950/40 border border-rose-500/40 text-rose-300 text-xs flex items-start gap-3">
+          <AlertTriangle className="w-5 h-5 text-rose-400 shrink-0 mt-0.5" />
+          <div className="space-y-1">
+            <h4 className="font-mono font-bold uppercase">ACCOUNT SUSPENDED</h4>
+            <p className="leading-relaxed">
+              Your cleaner privileges are currently suspended. Please contact your supervisor for assistance.
+            </p>
+          </div>
+        </div>
+      )}
+
+      {/* Cleaner Metrics Strip */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <div className="bg-[#12161c] rounded-2xl p-4 border border-white/[0.08] shadow-xs">
+          <span className="font-mono-display text-[10px] uppercase tracking-wider text-slate-400 block">
+            ASSIGNED TO YOU
+          </span>
+          <p className="text-2xl font-mono font-bold text-indigo-400 mt-1">
+            {pendingPickupTasks.length}
+          </p>
         </div>
 
-        <div className="p-4 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200/80 dark:border-slate-800 shadow-2xs space-y-1 col-span-2 sm:col-span-1">
-          <span className="text-[10px] uppercase tracking-wider font-bold text-slate-400 dark:text-slate-500">
-            Wards Authorized
+        <div className="bg-[#12161c] rounded-2xl p-4 border border-white/[0.08] shadow-xs">
+          <span className="font-mono-display text-[10px] uppercase tracking-wider text-slate-400 block">
+            WORK IN PROGRESS
           </span>
-          <p className="text-2xl font-black font-mono tabular-nums text-emerald-700 dark:text-emerald-300">
-            {approvedAreas.length}
+          <p className="text-2xl font-mono font-bold text-amber-400 mt-1">
+            {inProgressTasks.length}
           </p>
-          <span className="text-[11px] text-slate-500 dark:text-slate-400 truncate block">
-            {approvedAreas.length > 0
-              ? approvedAreas.map(resolveLocName).slice(0, 2).join(', ') + (approvedAreas.length > 2 ? '...' : '')
-              : 'None'}
+        </div>
+
+        <div className="bg-[#12161c] rounded-2xl p-4 border border-white/[0.08] shadow-xs">
+          <span className="font-mono-display text-[10px] uppercase tracking-wider text-slate-400 block">
+            IN PHOTO AUDIT
           </span>
+          <p className="text-2xl font-mono font-bold text-purple-400 mt-1">
+            {awaitingVerificationTasks.length}
+          </p>
+        </div>
+
+        <div className="bg-[#12161c] rounded-2xl p-4 border border-white/[0.08] shadow-xs">
+          <span className="font-mono-display text-[10px] uppercase tracking-wider text-slate-400 block">
+            RESOLVED & AUDITED
+          </span>
+          <p className="text-2xl font-mono font-bold text-emerald-400 mt-1">
+            {completedTasks.length}
+          </p>
         </div>
       </div>
 
-      {/* Navigation Tabs */}
-      <div className="flex border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 rounded-2xl px-4 pt-2 shadow-2xs">
+      {/* Tabs */}
+      <div className="flex border-b border-white/[0.08] bg-[#12161c] rounded-2xl p-1.5 shadow-xs">
         <button
           onClick={() => setActiveTab('tasks')}
-          className={`py-3 px-5 text-xs font-bold border-b-2 transition-all flex items-center gap-2 cursor-pointer ${
+          className={`flex-1 py-2.5 px-4 text-xs font-mono font-bold uppercase tracking-wider rounded-xl transition-all flex items-center justify-center gap-2 cursor-pointer min-h-[44px] ${
             activeTab === 'tasks'
-              ? 'border-emerald-600 text-emerald-700 dark:text-emerald-400'
-              : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'
+              ? 'bg-amber-950/70 text-amber-300 border border-amber-500/40 shadow-[0_0_12px_rgba(245,158,11,0.15)]'
+              : 'text-slate-400 hover:text-white'
           }`}
         >
-          <HardHat className="w-4 h-4" />
-          <span>My Assigned Pickup Tasks ({myAssignedTasks.length})</span>
+          <HardHat className="w-3.5 h-3.5 text-amber-400" />
+          <span>FIELD TASK ROSTER ({myAssignedTasks.length})</span>
         </button>
+
         <button
           onClick={() => setActiveTab('areas')}
-          className={`py-3 px-5 text-xs font-bold border-b-2 transition-all flex items-center gap-2 cursor-pointer ${
+          className={`flex-1 py-2.5 px-4 text-xs font-mono font-bold uppercase tracking-wider rounded-xl transition-all flex items-center justify-center gap-2 cursor-pointer min-h-[44px] ${
             activeTab === 'areas'
-              ? 'border-emerald-600 text-emerald-700 dark:text-emerald-400'
-              : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'
+              ? 'bg-amber-950/70 text-amber-300 border border-amber-500/40 shadow-[0_0_12px_rgba(245,158,11,0.15)]'
+              : 'text-slate-400 hover:text-white'
           }`}
         >
-          <MapPin className="w-4 h-4" />
-          <span>Authorized Service Localities ({approvedAreas.length})</span>
+          <MapPin className="w-3.5 h-3.5 text-amber-400" />
+          <span>APPROVED LOCALITIES ({approvedAreas.length})</span>
         </button>
       </div>
 
-      {/* TAB 1: ASSIGNED TASKS */}
+      {actionError && (
+        <div className="p-3.5 rounded-xl bg-rose-950/40 border border-rose-500/30 text-rose-300 text-xs font-mono flex items-center gap-2.5">
+          <AlertCircle className="w-4 h-4 text-rose-400 shrink-0" />
+          <span>{actionError}</span>
+        </div>
+      )}
+
+      {/* =========================================================================
+          TAB 1: BIG-BUTTON TASK LIST
+         ========================================================================= */}
       {activeTab === 'tasks' && (
         <div className="space-y-4">
-          {/* Action error banner */}
-          {actionError && !selectedTask && (
-            <div className="p-3.5 rounded-2xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800 text-rose-800 dark:text-rose-200 text-xs flex items-center justify-between gap-2 shadow-2xs">
-              <div className="flex items-center gap-2">
-                <AlertCircle className="w-4 h-4 shrink-0 text-rose-600 dark:text-rose-400" />
-                <span>{actionError}</span>
-              </div>
-              <button
-                onClick={() => setActionError(null)}
-                className="p-1 rounded-lg text-rose-600 hover:text-rose-800 dark:text-rose-300 hover:bg-rose-100 dark:hover:bg-rose-900/40 cursor-pointer transition-colors"
-                aria-label="Dismiss error"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-          )}
-
           {myAssignedTasks.length === 0 ? (
-            <div className="p-12 text-center bg-white dark:bg-slate-900 rounded-3xl border border-slate-200/80 dark:border-slate-800 shadow-sm space-y-3">
-              <div className="w-14 h-14 rounded-2xl bg-slate-100 dark:bg-slate-800 text-slate-400 flex items-center justify-center mx-auto">
-                <HardHat className="w-7 h-7" />
-              </div>
-              <h3 className="text-base font-bold text-slate-800 dark:text-slate-200">
-                No Pickup Tasks Assigned
-              </h3>
-              <p className="text-xs text-slate-500 dark:text-slate-400 max-w-md mx-auto leading-relaxed">
-                Cleaners can only view and execute tasks directly assigned to them by municipal supervisors in their approved service localities. Check back once a task is dispatched to you.
+            <div className="p-12 text-center bg-[#12161c] rounded-3xl border border-white/[0.08] shadow-xs space-y-2">
+              <HardHat className="w-12 h-12 text-slate-600 mx-auto" />
+              <h4 className="font-mono-display text-sm font-bold uppercase tracking-wider text-white">
+                NO ACTIVE ASSIGNMENTS
+              </h4>
+              <p className="text-xs text-slate-400 max-w-sm mx-auto leading-relaxed">
+                You have no active pickup tasks dispatched to your queue right now. You will be notified when your supervisor dispatches a complaint.
               </p>
             </div>
           ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {myAssignedTasks.map((task) => {
                 const initialPhoto = task.photos.find((p) => isInitialComplaintPhoto(p.photoType));
+                const isAssigned = task.status === 'assigned';
+                const isInProgress = task.status === 'in_progress';
+                const isAuditing = task.status === 'awaiting_verification';
+                const isResolved = task.status === 'completed';
 
                 return (
                   <div
                     key={task.id}
-                    className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200/80 dark:border-slate-800 overflow-hidden shadow-2xs hover:shadow-md transition-all flex flex-col justify-between"
+                    className="bg-[#12161c] rounded-3xl border border-white/[0.08] p-5 space-y-4 shadow-xs flex flex-col justify-between hover:border-white/20 transition-all"
                   >
                     <div>
-                      {initialPhoto && (
-                        <div className="h-44 bg-slate-950 relative overflow-hidden">
-                          <SignedPhoto
-                            src={initialPhoto.url}
-                            storagePath={initialPhoto.storagePath}
-                            alt="Initial waste report photo"
-                            className="w-full h-full object-cover"
-                          />
-                          <div className="absolute top-2.5 right-2.5">
-                            <UrgencyBadge urgency={task.urgency} />
-                          </div>
-                          <div className="absolute top-2.5 left-2.5">
+                      {/* Top Header */}
+                      <div className="flex items-start justify-between gap-3 mb-2">
+                        <div>
+                          <div className="flex items-center gap-2 mb-1">
+                            <span className="font-mono font-bold text-emerald-400 text-xs">
+                              {task.trackingCode}
+                            </span>
                             <StatusBadge status={task.status} size="sm" />
                           </div>
-                        </div>
-                      )}
-
-                      <div className="p-4 space-y-3">
-                        <div className="flex items-center justify-between">
-                          <span className="font-mono font-bold text-slate-900 dark:text-white text-xs">
-                            {task.trackingCode}
-                          </span>
-                          {!initialPhoto && <StatusBadge status={task.status} size="sm" />}
-                        </div>
-
-                        <div>
-                          <span className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider block">
-                            Location
-                          </span>
-                          <p className="text-xs font-bold text-slate-800 dark:text-slate-200 mt-0.5 line-clamp-1">
+                          <h4 className="text-base font-bold text-white font-sans line-clamp-1">
                             {task.address}
-                          </p>
-                          <span className="text-xs text-emerald-700 dark:text-emerald-400 font-medium flex items-center gap-1 mt-0.5">
-                            <MapPin className="w-3.5 h-3.5" />
-                            {task.localityName}
-                          </span>
+                          </h4>
+                          <p className="text-xs text-slate-400 font-mono mt-0.5">{task.localityName}</p>
                         </div>
+                        <UrgencyBadge urgency={task.urgency} />
+                      </div>
 
-                        <div className="flex items-center justify-between text-xs pt-2 border-t border-slate-100 dark:border-slate-800">
-                          <span className="text-slate-500 dark:text-slate-400">Waste Type:</span>
-                          <span className="font-semibold text-slate-800 dark:text-slate-200 capitalize">
-                            {task.wasteType.replace('_', ' ')}
-                          </span>
-                        </div>
-
-                        {task.supervisorNotes && (
-                          <div className="p-2.5 rounded-xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/80 text-amber-900 dark:text-amber-300 text-[11px] leading-relaxed">
-                            <span className="font-bold">Supervisor Note:</span> {task.supervisorNotes}
+                      {/* Photo Thumbnail & Details */}
+                      <div className="grid grid-cols-3 gap-3 my-3">
+                        {initialPhoto && (
+                          <div className="col-span-1 h-24 rounded-xl overflow-hidden bg-black border border-white/10">
+                            <img
+                              src={initialPhoto.url}
+                              alt="Waste report"
+                              className="w-full h-full object-cover"
+                            />
                           </div>
                         )}
+                        <div className={`${initialPhoto ? 'col-span-2' : 'col-span-3'} p-2.5 rounded-xl bg-[#0b0d10] border border-white/5 space-y-1 text-xs font-mono`}>
+                          <div className="flex justify-between text-slate-400">
+                            <span>TYPE:</span>
+                            <span className="text-white capitalize">{task.wasteType.replace('_', ' ')}</span>
+                          </div>
+                          <div className="flex justify-between text-slate-400">
+                            <span>RESIDENT:</span>
+                            <span className="text-white">{task.residentName}</span>
+                          </div>
+                          <div className="flex justify-between text-slate-400">
+                            <span>PHONE:</span>
+                            <a href={`tel:${task.residentPhone}`} className="text-cyan-400 hover:underline">
+                              {task.residentPhone}
+                            </a>
+                          </div>
+                        </div>
                       </div>
+
+                      {/* Navigation Link */}
+                      <a
+                        href={`https://www.google.com/maps?q=${task.latitude},${task.longitude}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="p-2.5 rounded-xl bg-[#0b0d10] border border-white/5 hover:border-cyan-500/40 text-cyan-400 hover:text-cyan-300 text-xs font-mono flex items-center justify-between transition-colors"
+                      >
+                        <span className="flex items-center gap-1.5 font-bold">
+                          <Navigation className="w-3.5 h-3.5" />
+                          OPEN GPS NAVIGATION
+                        </span>
+                        <ExternalLink className="w-3 h-3" />
+                      </a>
                     </div>
 
-                    <div className="p-4 pt-0 space-y-2">
-                      <div className="flex items-center gap-2">
-                        <a
-                          href={`https://www.google.com/maps/dir/?api=1&destination=${task.latitude},${task.longitude}`}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="flex-1 py-2 px-3 rounded-xl border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors"
-                        >
-                          <Navigation className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
-                          <span>Navigate</span>
-                        </a>
-
+                    {/* BIG BUTTON ACTION */}
+                    <div className="pt-2 border-t border-white/5 space-y-2">
+                      {isAssigned && (
                         <button
-                          onClick={() => setSelectedTask(task)}
-                          className="flex-1 py-2 px-3 rounded-xl bg-slate-900 dark:bg-slate-800 hover:bg-slate-800 dark:hover:bg-slate-700 text-white text-xs font-bold flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
-                        >
-                          Work Details
-                        </button>
-                      </div>
-
-                      {task.status === 'assigned' && (
-                        <button
+                          type="button"
                           onClick={() => handleStartWork(task.id)}
                           disabled={startingTaskId === task.id}
-                          className="w-full py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold flex items-center justify-center gap-1.5 shadow-xs transition-all cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed"
+                          className="w-full py-3.5 px-4 rounded-xl bg-amber-600 hover:bg-amber-500 disabled:opacity-50 text-white font-mono-display font-bold text-xs uppercase tracking-wider shadow-[0_0_20px_rgba(245,158,11,0.3)] transition-all cursor-pointer flex items-center justify-center gap-2 min-h-[48px]"
                         >
                           {startingTaskId === task.id ? (
                             <>
-                              <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                              <span>Starting Work...</span>
+                              <RefreshCw className="w-4 h-4 animate-spin" />
+                              <span>STARTING WORK...</span>
                             </>
                           ) : (
                             <>
                               <PlayCircle className="w-4 h-4" />
-                              <span>Start Pickup Work</span>
+                              <span>START PICKUP WORK (STAGE 04)</span>
                             </>
                           )}
                         </button>
                       )}
 
-                      {task.status === 'in_progress' && (
+                      {isInProgress && (
                         <button
-                          onClick={() => setSelectedTask(task)}
-                          className="w-full py-2.5 rounded-xl bg-orange-600 hover:bg-orange-700 text-white text-xs font-bold flex items-center justify-center gap-1.5 shadow-xs transition-all cursor-pointer"
+                          type="button"
+                          onClick={() => {
+                            setSelectedTask(task);
+                            setCompletionPhotoPreview(null);
+                            setCompletionFileMeta(null);
+                            setCompressionInfo(null);
+                            setCompletionError(null);
+                          }}
+                          className="w-full py-3.5 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-mono-display font-bold text-xs uppercase tracking-wider shadow-[0_0_20px_rgba(16,185,129,0.3)] transition-all cursor-pointer flex items-center justify-center gap-2 min-h-[48px]"
                         >
                           <Camera className="w-4 h-4" />
-                          <span>Upload Completion Evidence</span>
+                          <span>UPLOAD PROOF & MARK RESOLVED</span>
                         </button>
                       )}
+
+                      {isAuditing && (
+                        <div className="p-3 rounded-xl bg-purple-950/30 border border-purple-500/30 text-purple-300 text-center font-mono text-xs font-bold flex items-center justify-center gap-2">
+                          <Clock className="w-4 h-4 text-purple-400" />
+                          <span>PROOF SUBMITTED • AWAITING SUPERVISOR AUDIT</span>
+                        </div>
+                      )}
+
+                      {isResolved && (
+                        <div className="p-3 rounded-xl bg-emerald-950/30 border border-emerald-500/30 text-emerald-300 text-center font-mono text-xs font-bold flex items-center justify-center gap-2">
+                          <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                          <span>RESOLVED & AUDITED BY SUPERVISOR</span>
+                        </div>
+                      )}
+
+                      <button
+                        type="button"
+                        onClick={() => setSelectedTask(task)}
+                        className="w-full py-2 rounded-xl text-xs font-mono text-slate-400 hover:text-white transition-colors cursor-pointer"
+                      >
+                        VIEW FULL DETAILS & TIMELINE
+                      </button>
                     </div>
                   </div>
                 );
@@ -488,228 +442,233 @@ export const CleanerView: React.FC<CleanerViewProps> = ({
         </div>
       )}
 
-      {/* TAB 2: SERVICE LOCALITIES */}
+      {/* =========================================================================
+          TAB 2: APPROVED LOCALITIES
+         ========================================================================= */}
       {activeTab === 'areas' && (
-        <div className="bg-white dark:bg-slate-900 p-6 sm:p-8 rounded-3xl border border-slate-200/80 dark:border-slate-800 shadow-sm space-y-6">
-          <div>
-            <h3 className="text-base font-bold text-slate-900 dark:text-white">
-              Your Authorized Service Localities
+        <div className="space-y-4">
+          <div className="bg-[#12161c] rounded-3xl border border-white/[0.08] p-6 space-y-4 shadow-sm">
+            <h3 className="font-mono-display uppercase tracking-wider text-sm font-bold text-white flex items-center gap-2">
+              <MapPin className="w-4 h-4 text-amber-400" />
+              <span>YOUR AUTHORIZED SERVICE LOCALITIES</span>
             </h3>
-            <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-              Supervisors dispatch cleaning tasks based on your approved localities.
+            <p className="text-xs text-slate-400 leading-relaxed font-sans">
+              Cleaners are dispatched only to complaints within their approved municipal localities. Service areas are authorized by field supervisors or administrators.
             </p>
-          </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
-            {myServiceAreas.map((sa) => (
-              <div
-                key={sa.localityId}
-                className={`p-4 rounded-2xl border flex items-center justify-between shadow-2xs ${
-                  sa.isApproved
-                    ? 'bg-emerald-50 dark:bg-emerald-950/40 border-emerald-200 dark:border-emerald-800 text-emerald-950 dark:text-emerald-200'
-                    : 'bg-slate-50 dark:bg-slate-800/60 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300'
-                }`}
-              >
-                <div className="flex items-center gap-2.5">
-                  <MapPin className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
-                  <span className="font-bold text-xs">{resolveLocName(sa)}</span>
-                </div>
-                <span
-                  className={`text-[10px] font-bold uppercase tracking-wider px-2.5 py-0.5 rounded-full ${
-                    sa.isApproved
-                      ? 'bg-emerald-200 dark:bg-emerald-900/80 text-emerald-900 dark:text-emerald-200'
-                      : 'bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300'
-                  }`}
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 pt-2">
+              {approvedAreas.map((sa) => (
+                <div
+                  key={sa.id}
+                  className="p-3.5 rounded-2xl bg-[#0b0d10] border border-emerald-500/30 flex items-center justify-between"
                 >
-                  {sa.isApproved ? 'Approved' : 'Pending Review'}
+                  <div className="flex items-center gap-2">
+                    <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                    <span className="font-mono text-xs font-bold text-white">{sa.localityName}</span>
+                  </div>
+                  <span className="px-2 py-0.5 rounded-full text-[9px] font-mono uppercase bg-emerald-950/60 text-emerald-300 border border-emerald-500/20">
+                    APPROVED
+                  </span>
+                </div>
+              ))}
+            </div>
+
+            {pendingAreas.length > 0 && (
+              <div className="pt-4 border-t border-white/5 space-y-2">
+                <span className="font-mono text-[10px] text-amber-400 font-bold uppercase block">
+                  PENDING AUTHORIZATION ({pendingAreas.length})
                 </span>
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
+                  {pendingAreas.map((sa) => (
+                    <div
+                      key={sa.id}
+                      className="p-3 rounded-xl bg-[#0b0d10] border border-amber-500/20 flex items-center justify-between text-xs font-mono text-slate-400"
+                    >
+                      <span>{sa.localityName}</span>
+                      <span className="text-amber-400 text-[10px]">AWAITING APPROVAL</span>
+                    </div>
+                  ))}
+                </div>
               </div>
-            ))}
+            )}
           </div>
         </div>
       )}
 
-      {/* TASK MODAL / COMPLETION SUBMISSION */}
+      {/* =========================================================================
+          TASK DETAIL & RESOLUTION MODAL
+         ========================================================================= */}
       {selectedTask && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-xs overflow-y-auto">
-          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl w-full max-w-xl p-6 sm:p-7 shadow-2xl space-y-5 my-8 text-slate-900 dark:text-slate-100">
-            <div className="flex items-start justify-between gap-4">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-xs overflow-y-auto animate-in fade-in duration-150">
+          <div className="bg-[#0f1217] border border-white/10 rounded-3xl w-full max-w-2xl max-h-[90vh] overflow-y-auto p-6 sm:p-7 shadow-2xl space-y-5 my-8 text-slate-100">
+            {/* Top Bar */}
+            <div className="flex items-start justify-between border-b border-white/10 pb-4">
               <div>
                 <div className="flex items-center gap-2 mb-1">
-                  <span className="font-mono font-bold text-slate-900 dark:text-white text-base">
+                  <span className="font-mono font-bold text-emerald-400 text-sm">
                     {selectedTask.trackingCode}
                   </span>
                   <StatusBadge status={selectedTask.status} size="sm" />
+                  <UrgencyBadge urgency={selectedTask.urgency} />
                 </div>
-                <p className="text-xs text-slate-500 dark:text-slate-400">
-                  {selectedTask.address} • {selectedTask.localityName}
+                <h3 className="text-base font-bold text-white font-sans">{selectedTask.address}</h3>
+                <p className="text-xs text-slate-400 font-mono mt-0.5">
+                  {selectedTask.localityName} • SUBMITTED BY {selectedTask.residentName}
                 </p>
               </div>
+
               <button
-                onClick={() => {
-                  setSelectedTask(null);
-                  setActionError(null);
-                  setCompletionError(null);
-                }}
-                className="p-1.5 rounded-xl text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer shrink-0 transition-colors"
-                aria-label="Close modal"
+                onClick={() => setSelectedTask(null)}
+                className="p-1.5 rounded-xl text-slate-400 hover:text-white hover:bg-white/5 cursor-pointer shrink-0 transition-colors"
+                aria-label="Close"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            {/* Task Details Snapshot */}
-            <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700/80 space-y-2 text-xs shadow-2xs">
-              <div className="flex justify-between">
-                <span className="text-slate-500 dark:text-slate-400">Waste Type:</span>
-                <span className="font-semibold text-slate-800 dark:text-slate-200 capitalize">
-                  {selectedTask.wasteType.replace('_', ' ')}
-                </span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-slate-500 dark:text-slate-400">GPS Coordinates:</span>
-                <span className="font-mono tabular-nums text-slate-800 dark:text-slate-200">
-                  {selectedTask.latitude.toFixed(6)}, {selectedTask.longitude.toFixed(6)}
-                </span>
-              </div>
-              {(selectedTask.supervisorNote || selectedTask.supervisorNotes) && (
-                <div className="pt-2 border-t border-slate-200 dark:border-slate-700">
-                  <span className="font-bold text-amber-900 dark:text-amber-300 block">
-                    Supervisor Instructions:
-                  </span>
-                  <p className="text-amber-800 dark:text-amber-200 mt-0.5 leading-relaxed">
-                    {selectedTask.supervisorNote || selectedTask.supervisorNotes}
-                  </p>
+            {/* Resident Before Photo */}
+            <div className="space-y-2">
+              <span className="font-mono text-[10px] text-amber-400 font-bold uppercase block">
+                01. BEFORE: INITIAL WASTE EVIDENCE PHOTO
+              </span>
+              {selectedTask.photos.find((p) => isInitialComplaintPhoto(p.photoType)) ? (
+                <div className="rounded-2xl overflow-hidden bg-black border border-white/10">
+                  <SignedPhoto
+                    storagePath={selectedTask.photos.find((p) => isInitialComplaintPhoto(p.photoType))!.storagePath}
+                    src={selectedTask.photos.find((p) => isInitialComplaintPhoto(p.photoType))!.url}
+                    alt="Initial report photo"
+                    className="w-full h-52 object-cover"
+                  />
+                </div>
+              ) : (
+                <div className="p-6 rounded-2xl bg-[#0b0d10] border border-white/10 text-center text-xs font-mono text-slate-500">
+                  NO INITIAL PHOTO RECORDED
                 </div>
               )}
             </div>
 
-            {/* If In Progress: Completion Proof Upload Form */}
-            {selectedTask.status === 'in_progress' ? (
-              <form onSubmit={handleSubmitCompletion} className="space-y-4 text-xs">
-                <div className="space-y-2">
-                  <label className="block font-bold text-slate-800 dark:text-slate-200">
-                    Mandatory After-Cleaning Photographic Evidence *
-                  </label>
-                  <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed">
-                    Upload clear photo proof that the waste has been completely cleared. Max 3 MB (JPG/PNG).
+            {/* If In Progress, Show After Photo Upload Form */}
+            {selectedTask.status === 'in_progress' && (
+              <form onSubmit={handleSubmitCompletion} className="p-4 rounded-2xl bg-[#12161c] border border-emerald-500/30 space-y-4">
+                <div className="space-y-1">
+                  <h4 className="font-mono-display text-xs uppercase tracking-wider font-bold text-emerald-400 flex items-center gap-2">
+                    <Camera className="w-4 h-4 text-emerald-400" />
+                    <span>MANDATORY AFTER-CLEANING PHOTO EVIDENCE</span>
+                  </h4>
+                  <p className="text-xs text-slate-400 font-sans">
+                    Take or upload a photo showing the clean, cleared street area. Client compression optimizes file size under 3 MB.
                   </p>
-
-                  <div>
-                    {completionPhotoPreview ? (
-                      <div className="relative rounded-2xl overflow-hidden border border-emerald-300 dark:border-emerald-700 shadow-sm">
-                        <img
-                          src={completionPhotoPreview}
-                          alt="Completion proof"
-                          className="w-full h-48 object-cover"
-                        />
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setCompletionPhotoPreview(null);
-                            setCompletionFileMeta(null);
-                          }}
-                          className="absolute top-2.5 right-2.5 p-1.5 rounded-full bg-slate-900/80 text-white hover:bg-slate-900 cursor-pointer shadow-md"
-                          title="Remove photo"
-                        >
-                          <X className="w-4 h-4" />
-                        </button>
-                      </div>
-                    ) : (
-                      <label className="flex flex-col items-center justify-center w-full h-36 border-2 border-dashed border-slate-300 dark:border-slate-700 hover:border-emerald-500 rounded-2xl cursor-pointer bg-slate-50/50 dark:bg-slate-800/40 hover:bg-emerald-50/20 transition-all">
-                        <Camera className="w-8 h-8 text-slate-400 dark:text-slate-500 mb-1.5" />
-                        <span className="font-bold text-slate-700 dark:text-slate-200">
-                          Click to upload completion photo
-                        </span>
-                        <span className="text-[10px] text-slate-400 dark:text-slate-500 mt-0.5">
-                          JPG, JPEG, PNG up to 3 MB
-                        </span>
-                        <input
-                          type="file"
-                          accept="image/jpeg,image/jpg,image/png"
-                          onChange={handlePhotoSelect}
-                          className="hidden"
-                        />
-                      </label>
-                    )}
-                  </div>
                 </div>
 
+                {!completionPhotoPreview ? (
+                  <label className="border-2 border-dashed border-white/10 hover:border-emerald-500/50 rounded-2xl p-6 flex flex-col items-center justify-center cursor-pointer transition-all bg-[#0b0d10] group">
+                    <div className="w-12 h-12 rounded-xl bg-emerald-950/40 border border-emerald-500/30 text-emerald-400 flex items-center justify-center mb-2 shadow-xs group-hover:scale-105 transition-transform">
+                      {isCompressing ? (
+                        <RefreshCw className="w-5 h-5 animate-spin" />
+                      ) : (
+                        <Upload className="w-5 h-5" />
+                      )}
+                    </div>
+                    <span className="font-mono text-xs font-bold text-white uppercase">
+                      {isCompressing ? 'COMPRESSING ON CANVAS...' : 'CLICK TO CAPTURE OR CHOOSE PHOTO'}
+                    </span>
+                    <span className="font-mono text-[10px] text-slate-500 mt-1">
+                      JPG, JPEG, PNG (MAX 3 MB)
+                    </span>
+                    <input
+                      type="file"
+                      accept="image/jpeg,image/png,image/jpg"
+                      onChange={handlePhotoSelect}
+                      className="hidden"
+                      disabled={isCompressing}
+                    />
+                  </label>
+                ) : (
+                  <div className="space-y-2">
+                    <div className="relative rounded-2xl overflow-hidden bg-black border border-white/10 max-w-sm mx-auto">
+                      <img
+                        src={completionPhotoPreview}
+                        alt="Completion preview"
+                        className="w-full h-44 object-cover"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setCompletionPhotoPreview(null);
+                          setCompletionFileMeta(null);
+                          setCompressionInfo(null);
+                        }}
+                        className="absolute top-2 right-2 p-1.5 rounded-lg bg-black/70 hover:bg-rose-950 text-slate-300 hover:text-rose-400 border border-white/20 transition-colors cursor-pointer"
+                        title="Remove photo"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+
+                      {compressionInfo && (
+                        <div className="p-2 bg-[#0b0d10]/95 border-t border-white/10 flex justify-between text-[10px] font-mono text-emerald-400">
+                          <span>OPTIMIZED EVIDENCE</span>
+                          <span>{compressionInfo.compressedKb} KB (-{compressionInfo.savedPercent}%)</span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {completionError && (
+                  <p className="text-xs text-rose-400 font-mono flex items-center gap-1.5">
+                    <AlertCircle className="w-3.5 h-3.5 text-rose-400" />
+                    <span>{completionError}</span>
+                  </p>
+                )}
+
                 <div>
-                  <label className="block font-bold text-slate-800 dark:text-slate-200 mb-1.5">
-                    Completion Notes (Optional)
+                  <label className="block font-mono text-[10px] uppercase text-slate-400 mb-1">
+                    CLEANER COMPLETION NOTES (OPTIONAL)
                   </label>
                   <input
                     type="text"
                     value={completionNotes}
                     onChange={(e) => setCompletionNotes(e.target.value)}
-                    placeholder="e.g. Cleared 2 bags of debris, sidewalk sanitized."
-                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 text-xs bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 focus:outline-hidden transition-colors"
+                    placeholder="e.g. Waste cleared, pavement swept and disinfected..."
+                    className="w-full px-3.5 py-2 rounded-xl border border-white/10 bg-[#0b0d10] text-white text-xs font-mono focus:border-emerald-500/60 focus:outline-hidden"
                   />
                 </div>
 
-                {completionError && (
-                  <div className="p-3.5 rounded-2xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800 text-rose-800 dark:text-rose-200 text-xs flex items-center gap-2">
-                    <AlertCircle className="w-4 h-4 shrink-0 text-rose-600 dark:text-rose-400" />
-                    <span>{completionError}</span>
-                  </div>
-                )}
-
                 <button
                   type="submit"
-                  disabled={isSubmittingCompletion || !completionFileMeta}
-                  className="w-full py-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-sm shadow-emerald-600/20 transition-all cursor-pointer disabled:opacity-50 flex items-center justify-center gap-2"
+                  disabled={isSubmittingCompletion || !completionFileMeta || isCompressing}
+                  className="w-full py-3.5 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 text-white font-mono-display font-bold text-xs uppercase tracking-wider shadow-[0_0_20px_rgba(16,185,129,0.35)] transition-all cursor-pointer flex items-center justify-center gap-2 min-h-[48px]"
                 >
-                  <CheckCircle2 className="w-4 h-4" />
-                  <span>
-                    {isSubmittingCompletion
-                      ? 'Submitting Proof...'
-                      : 'Submit Completion for Supervisor Approval'}
-                  </span>
-                </button>
-              </form>
-            ) : selectedTask.status === 'assigned' ? (
-              <div className="space-y-4">
-                <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
-                  This complaint has been dispatched to you. Once you arrive at the waste location, click below to mark work in progress.
-                </p>
-                {actionError && (
-                  <div className="p-3.5 rounded-2xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800 text-rose-800 dark:text-rose-200 text-xs flex items-center gap-2">
-                    <AlertCircle className="w-4 h-4 shrink-0 text-rose-600 dark:text-rose-400" />
-                    <span>{actionError}</span>
-                  </div>
-                )}
-                <button
-                  onClick={() => handleStartWork(selectedTask.id)}
-                  disabled={startingTaskId === selectedTask.id}
-                  className="w-full py-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-sm shadow-emerald-600/20 cursor-pointer flex items-center justify-center gap-2 transition-all disabled:opacity-60 disabled:cursor-not-allowed"
-                >
-                  {startingTaskId === selectedTask.id ? (
+                  {isSubmittingCompletion ? (
                     <>
-                      <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                      <span>Starting Pickup Work...</span>
+                      <RefreshCw className="w-4 h-4 animate-spin" />
+                      <span>UPLOADING & SUBMITTING PROOF...</span>
                     </>
                   ) : (
                     <>
-                      <PlayCircle className="w-4 h-4" />
-                      <span>Start Pickup Work Now</span>
+                      <ShieldCheck className="w-4 h-4" />
+                      <span>SUBMIT PROOF FOR SUPERVISOR AUDIT</span>
                     </>
                   )}
                 </button>
-              </div>
-            ) : (
-              <div className="space-y-4">
-                <p className="text-xs text-slate-600 dark:text-slate-300">
-                  {selectedTask.status === 'awaiting_verification'
-                    ? 'Completion evidence has been submitted and is currently awaiting supervisor review and sign-off.'
-                    : 'This task has been resolved and closed.'}
-                </p>
-                <ComplaintTimeline
-                  currentStatus={selectedTask.status}
-                  history={selectedTask.history}
-                />
-              </div>
+              </form>
             )}
+
+            {/* Timeline & Audit History */}
+            <ComplaintTimeline
+              currentStatus={selectedTask.status}
+              history={selectedTask.history}
+            />
+
+            <div className="pt-2 text-right border-t border-white/10">
+              <button
+                type="button"
+                onClick={() => setSelectedTask(null)}
+                className="px-5 py-2.5 rounded-xl bg-white/10 hover:bg-white/15 text-xs font-mono font-bold uppercase tracking-wider text-white transition-colors cursor-pointer min-h-[44px]"
+              >
+                CLOSE
+              </button>
+            </div>
           </div>
         </div>
       )}

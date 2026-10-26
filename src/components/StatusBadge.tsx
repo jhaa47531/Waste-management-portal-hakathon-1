@@ -14,6 +14,7 @@ import {
   Eye,
   UserCheck,
   Flame,
+  Radio,
 } from 'lucide-react';
 
 interface StatusBadgeProps {
@@ -24,70 +25,84 @@ interface StatusBadgeProps {
 export const StatusBadge: React.FC<StatusBadgeProps> = ({ status, size = 'md' }) => {
   const configs: Record<
     ComplaintStatus,
-    { label: string; bg: string; text: string; border: string; icon: React.ReactNode }
+    { label: string; code: string; bg: string; text: string; border: string; glow: string; icon: React.ReactNode }
   > = {
     submitted: {
-      label: 'Submitted',
-      bg: 'bg-amber-50 dark:bg-amber-950/40',
-      text: 'text-amber-800 dark:text-amber-300',
-      border: 'border-amber-200 dark:border-amber-800/60',
-      icon: <Clock className="w-3.5 h-3.5" />,
+      label: 'SUBMITTED',
+      code: '01',
+      bg: 'bg-amber-950/40',
+      text: 'text-amber-300',
+      border: 'border-amber-500/30',
+      glow: 'shadow-[0_0_10px_rgba(245,158,11,0.15)]',
+      icon: <Clock className="w-3 h-3 text-amber-400" />,
     },
     verified: {
-      label: 'Verified',
-      bg: 'bg-sky-50 dark:bg-sky-950/40',
-      text: 'text-sky-800 dark:text-sky-300',
-      border: 'border-sky-200 dark:border-sky-800/60',
-      icon: <UserCheck className="w-3.5 h-3.5" />,
+      label: 'VERIFIED',
+      code: '02',
+      bg: 'bg-cyan-950/40',
+      text: 'text-cyan-300',
+      border: 'border-cyan-500/30',
+      glow: 'shadow-[0_0_10px_rgba(6,182,212,0.15)]',
+      icon: <UserCheck className="w-3 h-3 text-cyan-400" />,
     },
     assigned: {
-      label: 'Assigned',
-      bg: 'bg-indigo-50 dark:bg-indigo-950/40',
-      text: 'text-indigo-800 dark:text-indigo-300',
-      border: 'border-indigo-200 dark:border-indigo-800/60',
-      icon: <PlayCircle className="w-3.5 h-3.5" />,
+      label: 'ASSIGNED',
+      code: '03',
+      bg: 'bg-indigo-950/40',
+      text: 'text-indigo-300',
+      border: 'border-indigo-500/30',
+      glow: 'shadow-[0_0_10px_rgba(99,102,241,0.15)]',
+      icon: <PlayCircle className="w-3 h-3 text-indigo-400" />,
     },
     in_progress: {
-      label: 'In Progress',
-      bg: 'bg-purple-50 dark:bg-purple-950/40',
-      text: 'text-purple-800 dark:text-purple-300',
-      border: 'border-purple-200 dark:border-purple-800/60',
-      icon: <PlayCircle className="w-3.5 h-3.5 animate-spin" />,
+      label: 'IN PROGRESS',
+      code: '04',
+      bg: 'bg-purple-950/40',
+      text: 'text-purple-300',
+      border: 'border-purple-500/30',
+      glow: 'shadow-[0_0_10px_rgba(168,85,247,0.15)]',
+      icon: <Radio className="w-3 h-3 text-purple-400 animate-pulse" />,
     },
     awaiting_verification: {
-      label: 'Awaiting Audit',
-      bg: 'bg-orange-50 dark:bg-orange-950/40',
-      text: 'text-orange-800 dark:text-orange-300',
-      border: 'border-orange-200 dark:border-orange-800/60',
-      icon: <Eye className="w-3.5 h-3.5" />,
+      label: 'AUDITING',
+      code: '05',
+      bg: 'bg-orange-950/40',
+      text: 'text-orange-300',
+      border: 'border-orange-500/30',
+      glow: 'shadow-[0_0_10px_rgba(249,115,22,0.15)]',
+      icon: <Eye className="w-3 h-3 text-orange-400" />,
     },
     completed: {
-      label: 'Resolved',
-      bg: 'bg-emerald-50 dark:bg-emerald-950/40',
-      text: 'text-emerald-800 dark:text-emerald-300',
-      border: 'border-emerald-200 dark:border-emerald-800/60',
-      icon: <CheckCircle2 className="w-3.5 h-3.5" />,
+      label: 'RESOLVED',
+      code: '06',
+      bg: 'bg-emerald-950/40',
+      text: 'text-emerald-300',
+      border: 'border-emerald-500/30',
+      glow: 'shadow-[0_0_12px_rgba(16,185,129,0.2)]',
+      icon: <CheckCircle2 className="w-3 h-3 text-emerald-400" />,
     },
     rejected: {
-      label: 'Rejected',
-      bg: 'bg-rose-50 dark:bg-rose-950/40',
-      text: 'text-rose-800 dark:text-rose-300',
-      border: 'border-rose-200 dark:border-rose-800/60',
-      icon: <XCircle className="w-3.5 h-3.5" />,
+      label: 'REJECTED',
+      code: 'XX',
+      bg: 'bg-rose-950/40',
+      text: 'text-rose-300',
+      border: 'border-rose-500/30',
+      glow: 'shadow-[0_0_10px_rgba(244,63,94,0.15)]',
+      icon: <XCircle className="w-3 h-3 text-rose-400" />,
     },
   };
 
   const config = configs[status] || configs.submitted;
   const sizeClasses =
     size === 'sm'
-      ? 'px-2 py-0.5 text-[11px] font-semibold'
+      ? 'px-2 py-0.5 text-[10px]'
       : size === 'lg'
-      ? 'px-3.5 py-1.5 text-sm font-semibold'
-      : 'px-2.5 py-1 text-xs font-semibold';
+      ? 'px-3 py-1.5 text-xs'
+      : 'px-2.5 py-1 text-[11px]';
 
   return (
     <span
-      className={`inline-flex items-center gap-1.5 rounded-lg border ${config.bg} ${config.text} ${config.border} ${sizeClasses} shadow-xs whitespace-nowrap`}
+      className={`inline-flex items-center gap-1.5 rounded-full border font-mono-display font-bold tracking-wider ${config.bg} ${config.text} ${config.border} ${config.glow} ${sizeClasses} whitespace-nowrap`}
       role="status"
       aria-label={`Status: ${config.label}`}
     >
@@ -103,37 +118,37 @@ export const UrgencyBadge: React.FC<{ urgency: UrgencyLevel }> = ({ urgency }) =
     { label: string; bg: string; text: string; border: string; icon?: React.ReactNode }
   > = {
     low: {
-      label: 'Low Priority',
-      bg: 'bg-slate-100 dark:bg-slate-800/80',
-      text: 'text-slate-700 dark:text-slate-300',
-      border: 'border-slate-200 dark:border-slate-700',
+      label: 'LOW',
+      bg: 'bg-slate-900/60',
+      text: 'text-slate-400',
+      border: 'border-white/10',
     },
     normal: {
-      label: 'Normal',
-      bg: 'bg-blue-50 dark:bg-blue-950/40',
-      text: 'text-blue-700 dark:text-blue-300',
-      border: 'border-blue-200 dark:border-blue-800/60',
+      label: 'NORMAL',
+      bg: 'bg-blue-950/30',
+      text: 'text-blue-300',
+      border: 'border-blue-500/20',
     },
     high: {
-      label: 'High Urgency',
-      bg: 'bg-amber-50 dark:bg-amber-950/40',
-      text: 'text-amber-800 dark:text-amber-300 font-semibold',
-      border: 'border-amber-300 dark:border-amber-800',
-      icon: <AlertTriangle className="w-3 h-3 text-amber-600 dark:text-amber-400" />,
+      label: 'HIGH PRIORITY',
+      bg: 'bg-amber-950/40',
+      text: 'text-amber-300 font-semibold',
+      border: 'border-amber-500/30',
+      icon: <AlertTriangle className="w-3 h-3 text-amber-400" />,
     },
     critical: {
-      label: 'Critical Priority',
-      bg: 'bg-rose-50 dark:bg-rose-950/50',
-      text: 'text-rose-800 dark:text-rose-200 font-bold',
-      border: 'border-rose-300 dark:border-rose-800',
-      icon: <Flame className="w-3 h-3 text-rose-600 dark:text-rose-400" />,
+      label: 'CRITICAL',
+      bg: 'bg-rose-950/50',
+      text: 'text-rose-300 font-bold',
+      border: 'border-rose-500/40',
+      icon: <Flame className="w-3 h-3 text-rose-400 animate-pulse" />,
     },
   };
   const config = urgencyConfig[urgency] || urgencyConfig.normal;
 
   return (
     <span
-      className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] border ${config.bg} ${config.text} ${config.border} shadow-xs whitespace-nowrap`}
+      className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full font-mono text-[10px] tracking-wider uppercase border ${config.bg} ${config.text} ${config.border} whitespace-nowrap`}
     >
       {config.icon}
       <span>{config.label}</span>

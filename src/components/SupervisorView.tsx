@@ -16,10 +16,10 @@ import { portalStore } from '../services/store.ts';
 import { StatusBadge, UrgencyBadge } from './StatusBadge.tsx';
 import { ComplaintTimeline } from './ComplaintTimeline.tsx';
 import { SignedPhoto } from './SignedPhoto.tsx';
+import { ConfirmModal } from './ConfirmModal.tsx';
 import {
   isInitialComplaintPhoto,
   isCompletionComplaintPhoto,
-  getComplaintPhotoLabel,
 } from '../utils/rules.ts';
 import {
   CheckCircle2,
@@ -43,6 +43,11 @@ import {
   ArrowRight,
   Filter,
   RefreshCw,
+  Send,
+  Layers,
+  Inbox,
+  AlertCircle,
+  Users,
 } from 'lucide-react';
 
 interface SupervisorViewProps {
@@ -62,69 +67,72 @@ export const SupervisorView: React.FC<SupervisorViewProps> = ({
   serviceAreas,
   cleanerApplications = [],
 }) => {
-  const [viewMode, setViewMode] = useState<'queue' | 'cleaners' | 'my_cleaners'>('queue');
-  const myCleaners = users.filter((u) => u.role === 'cleaner' && u.supervisorId === currentUser.id);
+  // Tab Navigation: 01 Verify Queue, 02 Dispatch & Assign, 03 Resolution Audit, 04 All Complaints, 05 Applications, 06 My Team
+  const [activeTab, setActiveTab] = useState<
+    'verify_queue' | 'assign_queue' | 'audit_queue' | 'all' | 'applications' | 'team'
+  >('verify_queue');
 
-  // Complaints Filters
-  const [statusFilter, setStatusFilter] = useState<string>('all');
-  const [localityFilter, setLocalityFilter] = useState<string>('all');
-  const [urgencyFilter, setUrgencyFilter] = useState<string>('all');
+  // Search & Filter
   const [searchQuery, setSearchQuery] = useState('');
+  const [localityFilter, setLocalityFilter] = useState('all');
+  const [urgencyFilter, setUrgencyFilter] = useState('all');
 
-  // Selected complaint for review/assignment/action
+  // Selected complaint modal state
   const [selectedComplaint, setSelectedComplaint] = useState<Complaint | null>(null);
+  const [modalTab, setModalTab] = useState<'details' | 'verify' | 'assign' | 'audit' | 'reject'>('details');
 
-  // Action states for complaint modal
-  const [actionTab, setActionTab] = useState<'verify' | 'assign' | 'review' | 'reject' | 'details'>('details');
-  const [urgencySelection, setUrgencySelection] = useState<UrgencyLevel>('normal');
-  const [verifyNotes, setVerifyNotes] = useState('');
+  // Verification Form State
   const [phoneConfirmed, setPhoneConfirmed] = useState(false);
+  const [verifyUrgency, setVerifyUrgency] = useState<UrgencyLevel>('normal');
+  const [verifyNotes, setVerifyNotes] = useState('');
+  const [isVerifying, setIsVerifying] = useState(false);
+  const [verifyError, setVerifyError] = useState<string | null>(null);
 
-  const [rejectionReason, setRejectionReason] = useState('');
-  const [rejectionError, setRejectionError] = useState<string | null>(null);
-
+  // Assignment Form State
   const [selectedCleanerId, setSelectedCleanerId] = useState('');
   const [assignNotes, setAssignNotes] = useState('');
+  const [isAssigning, setIsAssigning] = useState(false);
   const [assignError, setAssignError] = useState<string | null>(null);
 
-  const [returnNote, setReturnNote] = useState('');
-  const [returnError, setReturnError] = useState<string | null>(null);
-  const [isReturning, setIsReturning] = useState(false);
+  // Rejection Form State
+  const [rejectionReason, setRejectionReason] = useState('');
+  const [isRejecting, setIsRejecting] = useState(false);
+  const [rejectionError, setRejectionError] = useState<string | null>(null);
+
+  // Audit Resolution Form State
   const [approveNotes, setApproveNotes] = useState('');
-  const [approveError, setApproveError] = useState<string | null>(null);
   const [isApproving, setIsApproving] = useState(false);
+  const [approveError, setApproveError] = useState<string | null>(null);
+  const [returnNote, setReturnNote] = useState('');
+  const [isReturning, setIsReturning] = useState(false);
+  const [returnError, setReturnError] = useState<string | null>(null);
 
   // Cleaner Application Review State
   const [cleanerAppNotes, setCleanerAppNotes] = useState<Record<string, string>>({});
   const [appLocalitySelection, setAppLocalitySelection] = useState<Record<string, string[]>>({});
   const [appReviewMsg, setAppReviewMsg] = useState<{ text: string; error?: boolean } | null>(null);
 
-  // Operational metrics
-  const submittedCount = complaints.filter((c) => c.status === 'submitted').length;
-  const verifiedCount = complaints.filter((c) => c.status === 'verified').length;
-  const inProgressCount = complaints.filter((c) => c.status === 'in_progress').length;
-  const awaitingVerificationCount = complaints.filter((c) => c.status === 'awaiting_verification').length;
-  const completedCount = complaints.filter((c) => c.status === 'completed').length;
-  const pendingCleanersCount = cleanerApplications.filter((a) => a.status === 'pending').length;
-
-  // Filter complaints
-  const filteredComplaints = complaints.filter((c) => {
-    if (statusFilter !== 'all' && c.status !== statusFilter) return false;
-    if (localityFilter !== 'all' && c.localityId !== localityFilter) return false;
-    if (urgencyFilter !== 'all' && c.urgency !== urgencyFilter) return false;
-    if (searchQuery.trim() !== '') {
-      const q = searchQuery.toLowerCase();
-      const match =
-        c.trackingCode.toLowerCase().includes(q) ||
-        c.address.toLowerCase().includes(q) ||
-        c.residentName.toLowerCase().includes(q) ||
-        c.residentPhone.includes(q);
-      if (!match) return false;
-    }
-    return true;
+  // Destructive Confirmation Modal
+  const [confirmModal, setConfirmModal] = useState<{
+    isOpen: boolean;
+    title: string;
+    message: string;
+    onConfirm: () => void;
+  }>({
+    isOpen: false,
+    title: '',
+    message: '',
+    onConfirm: () => {},
   });
 
-  // Approved cleaners with service areas matching the selected complaint's locality, with active team fallback
+  // Metrics
+  const submittedComplaints = complaints.filter((c) => c.status === 'submitted');
+  const verifiedComplaints = complaints.filter((c) => c.status === 'verified');
+  const auditingComplaints = complaints.filter((c) => c.status === 'awaiting_verification');
+  const pendingApps = cleanerApplications.filter((a) => a.status === 'pending');
+  const myCleaners = users.filter((u) => u.role === 'cleaner' && u.supervisorId === currentUser.id);
+
+  // Active cleaners for assignment
   const allActiveCleaners = users.filter((u) => u.role === 'cleaner' && u.accountStatus === 'active');
   const localityCleaners = selectedComplaint
     ? allActiveCleaners.filter((u) =>
@@ -135,49 +143,116 @@ export const SupervisorView: React.FC<SupervisorViewProps> = ({
     : [];
   const eligibleCleaners = localityCleaners.length > 0 ? localityCleaners : allActiveCleaners;
 
-  const handleOpenAction = (
-    complaint: Complaint,
-    tab: 'verify' | 'assign' | 'review' | 'reject' | 'details'
+  // Filter complaints for "All Complaints"
+  const filteredAllComplaints = complaints.filter((c) => {
+    if (localityFilter !== 'all' && c.localityId !== localityFilter) return false;
+    if (urgencyFilter !== 'all' && c.urgency !== urgencyFilter) return false;
+    if (searchQuery.trim() !== '') {
+      const q = searchQuery.toLowerCase().trim();
+      const match =
+        c.trackingCode.toLowerCase().includes(q) ||
+        c.address.toLowerCase().includes(q) ||
+        c.residentName.toLowerCase().includes(q) ||
+        c.residentPhone.includes(q);
+      if (!match) return false;
+    }
+    return true;
+  });
+
+  // Open complaint modal with specific action
+  const openAction = (
+    c: Complaint,
+    action: 'details' | 'verify' | 'assign' | 'audit' | 'reject'
   ) => {
-    setSelectedComplaint(complaint);
-    setActionTab(tab);
-    setUrgencySelection(complaint.urgency);
+    setSelectedComplaint(c);
+    setModalTab(action);
+    setVerifyUrgency(c.urgency);
+    setPhoneConfirmed(Boolean(c.residentConfirmedAt));
     setVerifyNotes('');
-    setPhoneConfirmed(Boolean(complaint.residentConfirmedAt));
-    setRejectionReason('');
-    setRejectionError(null);
+    setVerifyError(null);
     setSelectedCleanerId('');
     setAssignNotes('');
     setAssignError(null);
+    setRejectionReason('');
+    setRejectionError(null);
+    setApproveNotes('');
+    setApproveError(null);
     setReturnNote('');
     setReturnError(null);
-    setApproveNotes('');
   };
 
-  // Complaint Workflow Actions
-  const handleVerify = async () => {
+  // --------------------------------------------------------------------------
+  // Handlers
+  // --------------------------------------------------------------------------
+  const handleVerify = async (e: React.FormEvent) => {
+    e.preventDefault();
     if (!selectedComplaint) return;
-    const targetId = selectedComplaint.id;
-    const res = await portalStore.verifyComplaint(targetId, urgencySelection, verifyNotes);
+
+    if (!phoneConfirmed) {
+      setVerifyError('Voice verification with resident via phone is mandatory by municipal policy.');
+      return;
+    }
+
+    setIsVerifying(true);
+    setVerifyError(null);
+
+    const res = await portalStore.verifyComplaint(selectedComplaint.id, verifyUrgency, verifyNotes);
+    setIsVerifying(false);
+
     if (res.success) {
-      // Smoothly transition to assign cleaner tab so supervisor can proceed immediately
-      const refreshed = portalStore.getState().complaints.find((c) => c.id === targetId);
-      if (refreshed) {
-        setSelectedComplaint(refreshed);
-        setActionTab('assign');
+      const updated = portalStore.getState().complaints.find((c) => c.id === selectedComplaint.id);
+      if (updated) {
+        setSelectedComplaint(updated);
+        setModalTab('assign');
       } else {
         setSelectedComplaint(null);
       }
+    } else {
+      setVerifyError(res.error || 'Verification failed.');
     }
   };
 
-  const handleReject = async () => {
+  const handleAssignCleaner = async (e: React.FormEvent) => {
+    e.preventDefault();
     if (!selectedComplaint) return;
-    if (!rejectionReason.trim() || rejectionReason.trim().length < 5) {
-      setRejectionError('Rejection reason must be at least 5 characters.');
+
+    if (!selectedCleanerId) {
+      setAssignError('Please select an approved cleaner for dispatch.');
       return;
     }
-    const res = await portalStore.rejectComplaint(selectedComplaint.id, rejectionReason);
+
+    setIsAssigning(true);
+    setAssignError(null);
+
+    const res = await portalStore.assignCleaner(
+      selectedComplaint.id,
+      selectedCleanerId,
+      assignNotes
+    );
+    setIsAssigning(false);
+
+    if (res.success) {
+      setSelectedComplaint(null);
+    } else {
+      setAssignError(res.error || 'Failed to dispatch cleaner.');
+    }
+  };
+
+  const handleReject = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedComplaint) return;
+
+    if (!rejectionReason.trim() || rejectionReason.trim().length < 5) {
+      setRejectionError('A valid rejection rationale (minimum 5 characters) is required for audit logs.');
+      return;
+    }
+
+    setIsRejecting(true);
+    setRejectionError(null);
+
+    const res = await portalStore.rejectComplaint(selectedComplaint.id, rejectionReason.trim());
+    setIsRejecting(false);
+
     if (res.success) {
       setSelectedComplaint(null);
     } else {
@@ -185,578 +260,495 @@ export const SupervisorView: React.FC<SupervisorViewProps> = ({
     }
   };
 
-  const handleAssign = async () => {
+  const handleApproveCompletion = async () => {
     if (!selectedComplaint) return;
-    if (!selectedCleanerId) {
-      setAssignError('Please select an authorized approved cleaner.');
-      return;
-    }
-    const res = await portalStore.assignCleaner(selectedComplaint.id, selectedCleanerId, assignNotes);
+
+    setIsApproving(true);
+    setApproveError(null);
+
+    const res = await portalStore.approveCompletion(selectedComplaint.id, approveNotes);
+    setIsApproving(false);
+
     if (res.success) {
       setSelectedComplaint(null);
     } else {
-      setAssignError(res.error || 'Failed to assign cleaner.');
+      setApproveError(res.error || 'Failed to approve completion.');
     }
   };
 
-  const handleApproveCompletion = async () => {
+  const handleReturnToInProgress = async (e: React.FormEvent) => {
+    e.preventDefault();
     if (!selectedComplaint) return;
-    setIsApproving(true);
-    setApproveError(null);
-    try {
-      const res = await portalStore.approveCompletion(selectedComplaint.id, approveNotes);
-      if (res.success) {
-        setSelectedComplaint(null);
-        setApproveNotes('');
-      } else {
-        setApproveError(res.error || 'Failed to approve resolution.');
-      }
-    } catch (err: any) {
-      setApproveError(err?.message || 'Unexpected error while approving resolution.');
-    } finally {
-      setIsApproving(false);
-    }
-  };
 
-  const handleReturnToProgress = async () => {
-    if (!selectedComplaint) return;
     if (!returnNote.trim() || returnNote.trim().length < 5) {
-      setReturnError('Please enter an explanatory note describing why the work must be redone (minimum 5 characters).');
+      setReturnError('Rework guidance note (minimum 5 characters) is required.');
       return;
     }
+
     setIsReturning(true);
     setReturnError(null);
-    try {
-      const res = await portalStore.returnToProgress(selectedComplaint.id, returnNote);
-      if (res.success) {
-        setSelectedComplaint(null);
-        setReturnNote('');
-      } else {
-        setReturnError(res.error || 'Failed to return complaint to in-progress.');
-      }
-    } catch (err: any) {
-      setReturnError(err?.message || 'Unexpected error while returning complaint.');
-    } finally {
-      setIsReturning(false);
-    }
-  };
 
-  // Cleaner Application Review Actions
-  const handleToggleLocalityForApp = (cleanerId: string, locId: string) => {
-    setAppLocalitySelection((prev) => {
-      const current = prev[cleanerId] || [];
-      const updated = current.includes(locId)
-        ? current.filter((id) => id !== locId)
-        : [...current, locId];
-      return { ...prev, [cleanerId]: updated };
-    });
-  };
-
-  const handleReviewCleanerApp = async (app: CleanerApplication, decision: 'approved' | 'rejected') => {
-    setAppReviewMsg(null);
-    const selectedLocs =
-      appLocalitySelection[app.cleanerId] ||
-      serviceAreas.filter((sa) => sa.cleanerId === app.cleanerId).map((sa) => sa.localityId);
-
-    if (decision === 'approved' && selectedLocs.length === 0) {
-      setAppReviewMsg({
-        text: 'Please authorize at least one service locality for this approved cleaner.',
-        error: true,
-      });
-      return;
-    }
-
-    const notes = cleanerAppNotes[app.id] || '';
-    const assignedSupId = decision === 'approved' ? (app.assignedSupervisorId || currentUser?.id || null) : null;
-    const res = await portalStore.reviewCleanerApplication(app.id, decision, selectedLocs, assignedSupId, notes);
+    const res = await portalStore.returnToProgress(selectedComplaint.id, returnNote.trim());
+    setIsReturning(false);
 
     if (res.success) {
-      setAppReviewMsg({
-        text: `Cleaner application for ${app.cleanerName} successfully ${decision}.`,
-      });
-      setTimeout(() => setAppReviewMsg(null), 5000);
+      setSelectedComplaint(null);
     } else {
-      setAppReviewMsg({ text: res.error || 'Review failed.', error: true });
+      setReturnError(res.error || 'Failed to request rework.');
     }
+  };
+
+  const handleApproveApplication = async (app: CleanerApplication) => {
+    const assignedLocalities =
+      appLocalitySelection[app.id] && appLocalitySelection[app.id].length > 0
+        ? appLocalitySelection[app.id]
+        : (app.preferredLocalityIds || []).slice(0, 3);
+
+    const note = cleanerAppNotes[app.id] || 'Approved by field supervisor.';
+
+    const res = await portalStore.reviewCleanerApplication(
+      app.id,
+      'approved',
+      assignedLocalities,
+      currentUser.id,
+      note
+    );
+
+    if (res.success) {
+      setAppReviewMsg({ text: `Application for ${app.cleanerName} approved and service areas assigned.` });
+    } else {
+      setAppReviewMsg({ text: res.error || 'Failed to approve application.', error: true });
+    }
+  };
+
+  const handleRejectApplication = (app: CleanerApplication) => {
+    setConfirmModal({
+      isOpen: true,
+      title: 'REJECT CLEANER APPLICATION',
+      message: `Are you sure you want to reject the onboarding application for ${app.cleanerName}?`,
+      onConfirm: async () => {
+        const note = cleanerAppNotes[app.id] || 'Application declined by field supervisor.';
+        const res = await portalStore.reviewCleanerApplication(app.id, 'rejected', [], currentUser.id, note);
+        setConfirmModal((prev) => ({ ...prev, isOpen: false }));
+        if (res.success) {
+          setAppReviewMsg({ text: `Application for ${app.cleanerName} rejected.` });
+        } else {
+          setAppReviewMsg({ text: res.error || 'Failed to reject application.', error: true });
+        }
+      },
+    });
   };
 
   return (
     <div className="space-y-6">
-      {/* Top Navigation Tabs */}
-      <div className="flex flex-wrap items-center justify-between border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 rounded-2xl p-2 shadow-2xs gap-2">
-        <div className="flex flex-wrap items-center gap-1.5">
-          <button
-            onClick={() => setViewMode('queue')}
-            className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer ${
-              viewMode === 'queue'
-                ? 'bg-slate-900 dark:bg-slate-800 text-white shadow-xs'
-                : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800/60'
-            }`}
-          >
-            <ClipboardList className="w-4 h-4 text-emerald-500" />
-            <span>Operational Queue ({complaints.length})</span>
-          </button>
-          <button
-            onClick={() => setViewMode('my_cleaners')}
-            className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer ${
-              viewMode === 'my_cleaners'
-                ? 'bg-slate-900 dark:bg-slate-800 text-white shadow-xs'
-                : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800/60'
-            }`}
-          >
-            <UserCheck className="w-4 h-4 text-blue-500" />
-            <span>My Team ({myCleaners.length})</span>
-          </button>
-          <button
-            onClick={() => setViewMode('cleaners')}
-            className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer ${
-              viewMode === 'cleaners'
-                ? 'bg-slate-900 dark:bg-slate-800 text-white shadow-xs'
-                : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800/60'
-            }`}
-          >
-            <HardHat className="w-4 h-4 text-amber-500" />
-            <span>Cleaner Applications ({pendingCleanersCount} Pending)</span>
-          </button>
-        </div>
+      {/* Supervisor Metrics Strip */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <button
+          onClick={() => setActiveTab('verify_queue')}
+          className={`p-4 rounded-2xl border text-left transition-all cursor-pointer ${
+            activeTab === 'verify_queue'
+              ? 'border-amber-500/50 bg-amber-950/30 shadow-[0_0_15px_rgba(245,158,11,0.15)]'
+              : 'border-white/[0.08] bg-[#12161c] hover:border-white/20'
+          }`}
+        >
+          <div className="flex items-center justify-between">
+            <span className="font-mono-display text-[10px] uppercase tracking-wider text-slate-400">
+              01. VERIFY QUEUE
+            </span>
+            <PhoneCall className="w-4 h-4 text-amber-400" />
+          </div>
+          <p className="text-2xl font-mono font-bold text-amber-400 mt-1">
+            {submittedComplaints.length}
+          </p>
+        </button>
+
+        <button
+          onClick={() => setActiveTab('assign_queue')}
+          className={`p-4 rounded-2xl border text-left transition-all cursor-pointer ${
+            activeTab === 'assign_queue'
+              ? 'border-cyan-500/50 bg-cyan-950/30 shadow-[0_0_15px_rgba(6,182,212,0.15)]'
+              : 'border-white/[0.08] bg-[#12161c] hover:border-white/20'
+          }`}
+        >
+          <div className="flex items-center justify-between">
+            <span className="font-mono-display text-[10px] uppercase tracking-wider text-slate-400">
+              02. DISPATCH READY
+            </span>
+            <Send className="w-4 h-4 text-cyan-400" />
+          </div>
+          <p className="text-2xl font-mono font-bold text-cyan-400 mt-1">
+            {verifiedComplaints.length}
+          </p>
+        </button>
+
+        <button
+          onClick={() => setActiveTab('audit_queue')}
+          className={`p-4 rounded-2xl border text-left transition-all cursor-pointer ${
+            activeTab === 'audit_queue'
+              ? 'border-purple-500/50 bg-purple-950/30 shadow-[0_0_15px_rgba(168,85,247,0.15)]'
+              : 'border-white/[0.08] bg-[#12161c] hover:border-white/20'
+          }`}
+        >
+          <div className="flex items-center justify-between">
+            <span className="font-mono-display text-[10px] uppercase tracking-wider text-slate-400">
+              03. PHOTO AUDIT
+            </span>
+            <Eye className="w-4 h-4 text-purple-400" />
+          </div>
+          <p className="text-2xl font-mono font-bold text-purple-400 mt-1">
+            {auditingComplaints.length}
+          </p>
+        </button>
+
+        <button
+          onClick={() => setActiveTab('applications')}
+          className={`p-4 rounded-2xl border text-left transition-all cursor-pointer ${
+            activeTab === 'applications'
+              ? 'border-emerald-500/50 bg-emerald-950/30 shadow-[0_0_15px_rgba(16,185,129,0.15)]'
+              : 'border-white/[0.08] bg-[#12161c] hover:border-white/20'
+          }`}
+        >
+          <div className="flex items-center justify-between">
+            <span className="font-mono-display text-[10px] uppercase tracking-wider text-slate-400">
+              04. APPLICANTS
+            </span>
+            <HardHat className="w-4 h-4 text-emerald-400" />
+          </div>
+          <p className="text-2xl font-mono font-bold text-emerald-400 mt-1">
+            {pendingApps.length}
+          </p>
+        </button>
       </div>
 
-      {/* VIEW MODE 1: OPERATIONAL COMPLAINTS QUEUE */}
-      {viewMode === 'queue' && (
-        <div className="space-y-6">
-          {/* Workflow Stage Filter Cards */}
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3.5">
-            <div
-              onClick={() => setStatusFilter(statusFilter === 'submitted' ? 'all' : 'submitted')}
-              className={`p-4 rounded-2xl border cursor-pointer transition-all shadow-2xs ${
-                statusFilter === 'submitted'
-                  ? 'bg-amber-50 dark:bg-amber-950/40 border-amber-400 dark:border-amber-700 ring-2 ring-amber-300 dark:ring-amber-500/40'
-                  : 'bg-white dark:bg-slate-900 border-slate-200/80 dark:border-slate-800 hover:border-amber-300'
-              }`}
-            >
-              <span className="text-[10px] font-bold uppercase tracking-wider text-amber-700 dark:text-amber-400">
-                1. New Submissions
-              </span>
-              <div className="flex items-baseline justify-between mt-2">
-                <span className="text-2xl font-black font-mono tabular-nums text-slate-900 dark:text-white">
-                  {submittedCount}
-                </span>
-                <span className="text-xs text-slate-500 dark:text-slate-400">Needs Triage</span>
-              </div>
-            </div>
+      {/* Tab Bar */}
+      <div className="flex flex-wrap border-b border-white/[0.08] bg-[#12161c] rounded-2xl p-1.5 shadow-xs gap-1">
+        <button
+          onClick={() => setActiveTab('verify_queue')}
+          className={`py-2 px-3.5 text-xs font-mono font-bold uppercase tracking-wider rounded-xl transition-all flex items-center gap-1.5 cursor-pointer min-h-[44px] ${
+            activeTab === 'verify_queue'
+              ? 'bg-amber-950/60 text-amber-300 border border-amber-500/40 shadow-xs'
+              : 'text-slate-400 hover:text-white'
+          }`}
+        >
+          <span>VERIFY QUEUE</span>
+          <span className="px-1.5 py-0.5 rounded-full bg-black/40 text-[10px]">
+            {submittedComplaints.length}
+          </span>
+        </button>
 
-            <div
-              onClick={() => setStatusFilter(statusFilter === 'verified' ? 'all' : 'verified')}
-              className={`p-4 rounded-2xl border cursor-pointer transition-all shadow-2xs ${
-                statusFilter === 'verified'
-                  ? 'bg-blue-50 dark:bg-blue-950/40 border-blue-400 dark:border-blue-700 ring-2 ring-blue-300 dark:ring-blue-500/40'
-                  : 'bg-white dark:bg-slate-900 border-slate-200/80 dark:border-slate-800 hover:border-blue-300'
-              }`}
-            >
-              <span className="text-[10px] font-bold uppercase tracking-wider text-blue-700 dark:text-blue-400">
-                2. Verified
-              </span>
-              <div className="flex items-baseline justify-between mt-2">
-                <span className="text-2xl font-black font-mono tabular-nums text-slate-900 dark:text-white">
-                  {verifiedCount}
-                </span>
-                <span className="text-xs text-slate-500 dark:text-slate-400">Assign Cleaner</span>
-              </div>
-            </div>
+        <button
+          onClick={() => setActiveTab('assign_queue')}
+          className={`py-2 px-3.5 text-xs font-mono font-bold uppercase tracking-wider rounded-xl transition-all flex items-center gap-1.5 cursor-pointer min-h-[44px] ${
+            activeTab === 'assign_queue'
+              ? 'bg-cyan-950/60 text-cyan-300 border border-cyan-500/40 shadow-xs'
+              : 'text-slate-400 hover:text-white'
+          }`}
+        >
+          <span>DISPATCH & ASSIGN</span>
+          <span className="px-1.5 py-0.5 rounded-full bg-black/40 text-[10px]">
+            {verifiedComplaints.length}
+          </span>
+        </button>
 
-            <div
-              onClick={() => setStatusFilter(statusFilter === 'in_progress' ? 'all' : 'in_progress')}
-              className={`p-4 rounded-2xl border cursor-pointer transition-all shadow-2xs ${
-                statusFilter === 'in_progress'
-                  ? 'bg-purple-50 dark:bg-purple-950/40 border-purple-400 dark:border-purple-700 ring-2 ring-purple-300 dark:ring-purple-500/40'
-                  : 'bg-white dark:bg-slate-900 border-slate-200/80 dark:border-slate-800 hover:border-purple-300'
-              }`}
-            >
-              <span className="text-[10px] font-bold uppercase tracking-wider text-purple-700 dark:text-purple-400">
-                3. In Progress
-              </span>
-              <div className="flex items-baseline justify-between mt-2">
-                <span className="text-2xl font-black font-mono tabular-nums text-slate-900 dark:text-white">
-                  {inProgressCount}
-                </span>
-                <span className="text-xs text-slate-500 dark:text-slate-400">On-Site Work</span>
-              </div>
-            </div>
+        <button
+          onClick={() => setActiveTab('audit_queue')}
+          className={`py-2 px-3.5 text-xs font-mono font-bold uppercase tracking-wider rounded-xl transition-all flex items-center gap-1.5 cursor-pointer min-h-[44px] ${
+            activeTab === 'audit_queue'
+              ? 'bg-purple-950/60 text-purple-300 border border-purple-500/40 shadow-xs'
+              : 'text-slate-400 hover:text-white'
+          }`}
+        >
+          <span>PHOTO AUDIT</span>
+          <span className="px-1.5 py-0.5 rounded-full bg-black/40 text-[10px]">
+            {auditingComplaints.length}
+          </span>
+        </button>
 
-            <div
-              onClick={() =>
-                setStatusFilter(
-                  statusFilter === 'awaiting_verification' ? 'all' : 'awaiting_verification'
-                )
-              }
-              className={`p-4 rounded-2xl border cursor-pointer transition-all shadow-2xs ${
-                statusFilter === 'awaiting_verification'
-                  ? 'bg-orange-50 dark:bg-orange-950/40 border-orange-400 dark:border-orange-700 ring-2 ring-orange-300 dark:ring-orange-500/40'
-                  : 'bg-white dark:bg-slate-900 border-slate-200/80 dark:border-slate-800 hover:border-orange-300'
-              }`}
-            >
-              <span className="text-[10px] font-bold uppercase tracking-wider text-orange-700 dark:text-orange-400">
-                4. Audit Proof
-              </span>
-              <div className="flex items-baseline justify-between mt-2">
-                <span className="text-2xl font-black font-mono tabular-nums text-slate-900 dark:text-white">
-                  {awaitingVerificationCount}
-                </span>
-                <span className="text-xs text-slate-500 dark:text-slate-400">Review Photos</span>
-              </div>
-            </div>
+        <button
+          onClick={() => setActiveTab('all')}
+          className={`py-2 px-3.5 text-xs font-mono font-bold uppercase tracking-wider rounded-xl transition-all flex items-center gap-1.5 cursor-pointer min-h-[44px] ${
+            activeTab === 'all'
+              ? 'bg-white/10 text-white border border-white/20'
+              : 'text-slate-400 hover:text-white'
+          }`}
+        >
+          <span>ALL COMPLAINTS ({complaints.length})</span>
+        </button>
 
-            <div
-              onClick={() => setStatusFilter(statusFilter === 'completed' ? 'all' : 'completed')}
-              className={`p-4 rounded-2xl border cursor-pointer transition-all col-span-2 sm:col-span-1 shadow-2xs ${
-                statusFilter === 'completed'
-                  ? 'bg-emerald-50 dark:bg-emerald-950/40 border-emerald-400 dark:border-emerald-700 ring-2 ring-emerald-300 dark:ring-emerald-500/40'
-                  : 'bg-white dark:bg-slate-900 border-slate-200/80 dark:border-slate-800 hover:border-emerald-300'
-              }`}
-            >
-              <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-700 dark:text-emerald-400">
-                5. Completed
-              </span>
-              <div className="flex items-baseline justify-between mt-2">
-                <span className="text-2xl font-black font-mono tabular-nums text-slate-900 dark:text-white">
-                  {completedCount}
-                </span>
-                <span className="text-xs text-slate-500 dark:text-slate-400">Signed Off</span>
-              </div>
-            </div>
-          </div>
+        <button
+          onClick={() => setActiveTab('applications')}
+          className={`py-2 px-3.5 text-xs font-mono font-bold uppercase tracking-wider rounded-xl transition-all flex items-center gap-1.5 cursor-pointer min-h-[44px] ${
+            activeTab === 'applications'
+              ? 'bg-emerald-950/60 text-emerald-300 border border-emerald-500/40'
+              : 'text-slate-400 hover:text-white'
+          }`}
+        >
+          <span>CLEANER ONBOARDING ({pendingApps.length})</span>
+        </button>
 
-          {/* Operational Toolbar */}
-          <div className="bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-200/80 dark:border-slate-800 flex flex-wrap items-center justify-between gap-3 shadow-2xs">
-            <div className="relative flex-1 min-w-[240px]">
-              <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-3" />
-              <input
-                type="text"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Search tracking code, resident phone, address, or name..."
-                className="w-full pl-10 pr-4 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 text-xs focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 focus:outline-none transition-colors"
-              />
-            </div>
+        <button
+          onClick={() => setActiveTab('team')}
+          className={`py-2 px-3.5 text-xs font-mono font-bold uppercase tracking-wider rounded-xl transition-all flex items-center gap-1.5 cursor-pointer min-h-[44px] ${
+            activeTab === 'team'
+              ? 'bg-white/10 text-white border border-white/20'
+              : 'text-slate-400 hover:text-white'
+          }`}
+        >
+          <span>MY TEAM ({myCleaners.length})</span>
+        </button>
+      </div>
 
-            <div className="flex flex-wrap items-center gap-2">
-              <select
-                value={statusFilter}
-                onChange={(e) => setStatusFilter(e.target.value)}
-                className="px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-slate-100 text-xs font-medium cursor-pointer"
-              >
-                <option value="all">All Statuses ({complaints.length})</option>
-                <option value="submitted">1. Submitted ({submittedCount})</option>
-                <option value="verified">2. Verified ({verifiedCount})</option>
-                <option value="assigned">3. Assigned</option>
-                <option value="in_progress">4. In Progress ({inProgressCount})</option>
-                <option value="awaiting_verification">
-                  5. Awaiting Review ({awaitingVerificationCount})
-                </option>
-                <option value="completed">6. Completed ({completedCount})</option>
-                <option value="rejected">Rejected</option>
-              </select>
-
-              <select
-                value={localityFilter}
-                onChange={(e) => setLocalityFilter(e.target.value)}
-                className="px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-slate-100 text-xs font-medium cursor-pointer"
-              >
-                <option value="all">All Localities</option>
-                {localities.map((loc) => (
-                  <option key={loc.id} value={loc.id}>
-                    {loc.name}
-                  </option>
-                ))}
-              </select>
-
-              <select
-                value={urgencyFilter}
-                onChange={(e) => setUrgencyFilter(e.target.value)}
-                className="px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-slate-100 text-xs font-medium cursor-pointer"
-              >
-                <option value="all">All Urgency</option>
-                <option value="critical">Critical</option>
-                <option value="high">High</option>
-                <option value="normal">Normal</option>
-                <option value="low">Low</option>
-              </select>
-
-              {(statusFilter !== 'all' || localityFilter !== 'all' || urgencyFilter !== 'all' || searchQuery) && (
-                <button
-                  onClick={() => {
-                    setStatusFilter('all');
-                    setLocalityFilter('all');
-                    setUrgencyFilter('all');
-                    setSearchQuery('');
-                  }}
-                  className="p-2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 cursor-pointer rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800"
-                  title="Reset Filters"
-                >
-                  <RotateCcw className="w-4 h-4" />
-                </button>
-              )}
-            </div>
-          </div>
-
-          {/* Complaints Table */}
-          {filteredComplaints.length === 0 ? (
-            <div className="p-12 text-center bg-white dark:bg-slate-900 rounded-3xl border border-slate-200/80 dark:border-slate-800 shadow-sm space-y-3">
-              <ClipboardList className="w-12 h-12 text-slate-300 dark:text-slate-600 mx-auto" />
-              <h3 className="text-base font-bold text-slate-800 dark:text-slate-200">No Complaints Match Filters</h3>
-              <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 max-w-sm mx-auto">
-                There are no complaints under this status or locality filter. Try adjusting your search query.
+      {/* =========================================================================
+          TAB 1: VERIFICATION QUEUE (Quick Voice Triage)
+         ========================================================================= */}
+      {activeTab === 'verify_queue' && (
+        <div className="space-y-4">
+          <div className="flex items-center justify-between px-1">
+            <div>
+              <h3 className="font-mono-display text-sm uppercase tracking-wider font-bold text-white flex items-center gap-2">
+                <PhoneCall className="w-4 h-4 text-amber-400" />
+                <span>01. VOICE VERIFICATION QUEUE</span>
+              </h3>
+              <p className="text-xs text-slate-400 mt-0.5">
+                Inspect resident photos and confirm street details via phone call before authorizing dispatch.
               </p>
             </div>
+          </div>
+
+          {submittedComplaints.length === 0 ? (
+            <div className="p-12 text-center bg-[#12161c] rounded-3xl border border-white/[0.08] shadow-xs space-y-2">
+              <CheckCircle2 className="w-10 h-10 text-emerald-400 mx-auto" />
+              <h4 className="font-mono text-sm font-bold text-white">QUEUE CLEAR</h4>
+              <p className="text-xs text-slate-400">All submitted reports have been verified.</p>
+            </div>
           ) : (
-            <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200/80 dark:border-slate-800 overflow-hidden shadow-2xs">
-              <div className="overflow-x-auto">
-                <table className="w-full text-left text-xs">
-                  <thead className="bg-slate-50 dark:bg-slate-800/60 text-slate-600 dark:text-slate-400 font-bold border-b border-slate-200 dark:border-slate-800 uppercase text-[10px] tracking-wider">
-                    <tr>
-                      <th className="py-3 px-4">Tracking & Locality</th>
-                      <th className="py-3 px-4">Resident Info</th>
-                      <th className="py-3 px-4">Status & Urgency</th>
-                      <th className="py-3 px-4">Assigned Cleaner</th>
-                      <th className="py-3 px-4">Evidence</th>
-                      <th className="py-3 px-4 text-right">Workflow Action</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                    {filteredComplaints.map((c) => {
-                      const initialPhoto = c.photos.find((p) => p.photoType === 'resident_initial');
-                      const completionPhoto = c.photos.find((p) => p.photoType === 'cleaner_completion');
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {submittedComplaints.map((c) => {
+                const initialPhoto = c.photos.find((p) => isInitialComplaintPhoto(p.photoType));
+                return (
+                  <div
+                    key={c.id}
+                    className="bg-[#12161c] rounded-2xl border border-white/[0.08] overflow-hidden flex flex-col justify-between shadow-xs hover:border-amber-500/30 transition-all"
+                  >
+                    <div>
+                      {initialPhoto && (
+                        <div className="h-40 bg-black relative">
+                          <img
+                            src={initialPhoto.url}
+                            alt="Report"
+                            className="w-full h-full object-cover"
+                          />
+                          <div className="absolute top-2.5 left-2.5">
+                            <StatusBadge status={c.status} size="sm" />
+                          </div>
+                          <div className="absolute top-2.5 right-2.5">
+                            <UrgencyBadge urgency={c.urgency} />
+                          </div>
+                        </div>
+                      )}
 
-                      return (
-                        <tr key={c.id} className="hover:bg-slate-50/70 dark:hover:bg-slate-800/40 transition-colors">
-                          <td className="py-3.5 px-4">
-                            <span className="font-mono font-bold text-slate-900 dark:text-white block">
-                              {c.trackingCode}
-                            </span>
-                            <span className="text-slate-500 dark:text-slate-400 flex items-center gap-1 mt-0.5">
-                              <MapPin className="w-3 h-3 text-slate-400" />
-                              {c.localityName}
-                            </span>
-                            <span className="text-[11px] text-slate-400 dark:text-slate-500 block truncate max-w-xs">
-                              {c.address}
-                            </span>
-                          </td>
+                      <div className="p-4 space-y-2">
+                        <div className="flex items-center justify-between text-xs font-mono">
+                          <span className="text-emerald-400 font-bold">{c.trackingCode}</span>
+                          <span className="text-slate-500 text-[10px]">
+                            {new Date(c.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                          </span>
+                        </div>
+                        <h4 className="font-bold text-sm text-white line-clamp-1">{c.address}</h4>
+                        <p className="text-xs text-slate-400 font-mono">{c.localityName}</p>
 
-                          <td className="py-3.5 px-4">
-                            <span className="font-semibold text-slate-800 dark:text-slate-200 block">{c.residentName}</span>
+                        <div className="p-2.5 rounded-xl bg-[#0b0d10] border border-white/5 text-xs font-mono space-y-1">
+                          <div className="flex items-center justify-between text-slate-400">
+                            <span>RESIDENT:</span>
+                            <span className="text-white font-bold">{c.residentName}</span>
+                          </div>
+                          <div className="flex items-center justify-between text-slate-400">
+                            <span>PHONE:</span>
                             <a
                               href={`tel:${c.residentPhone}`}
-                              className="text-emerald-700 dark:text-emerald-400 hover:underline flex items-center gap-1 font-mono text-[11px] mt-0.5"
+                              className="text-cyan-400 hover:underline flex items-center gap-1 font-bold"
                             >
-                              <PhoneCall className="w-3 h-3" /> {c.residentPhone}
+                              <Phone className="w-3 h-3" />
+                              {c.residentPhone}
                             </a>
-                          </td>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
 
-                          <td className="py-3.5 px-4 space-y-1">
-                            <div>
-                              <StatusBadge status={c.status} size="sm" />
-                            </div>
-                            <div>
-                              <UrgencyBadge urgency={c.urgency} />
-                            </div>
-                          </td>
+                    <div className="p-3 border-t border-white/5 grid grid-cols-2 gap-2">
+                      <button
+                        onClick={() => openAction(c, 'verify')}
+                        className="py-2.5 px-3 rounded-xl bg-amber-600 hover:bg-amber-500 text-white font-mono font-bold text-xs uppercase tracking-wider flex items-center justify-center gap-1.5 transition-all cursor-pointer min-h-[44px]"
+                      >
+                        <UserCheck className="w-3.5 h-3.5" />
+                        <span>VERIFY & DISPATCH</span>
+                      </button>
 
-                          <td className="py-3.5 px-4">
-                            {c.assignedCleanerName ? (
-                              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-lg bg-amber-50 dark:bg-amber-950/50 text-amber-800 dark:text-amber-300 font-semibold border border-amber-200 dark:border-amber-800">
-                                <HardHat className="w-3 h-3 text-amber-600 dark:text-amber-400" />
-                                {c.assignedCleanerName}
-                              </span>
-                            ) : (
-                              <span className="text-slate-400 dark:text-slate-500 italic">Unassigned</span>
-                            )}
-                          </td>
-
-                          <td className="py-3.5 px-4">
-                            <div className="flex items-center gap-1.5">
-                              {initialPhoto && (
-                                <img
-                                  src={initialPhoto.url}
-                                  alt="Initial"
-                                  className="w-9 h-9 rounded-lg object-cover border border-slate-200 dark:border-slate-700 cursor-pointer hover:opacity-80 transition-opacity"
-                                  onClick={() => handleOpenAction(c, 'details')}
-                                  title="Initial Resident Photo"
-                                />
-                              )}
-                              {completionPhoto && (
-                                <img
-                                  src={completionPhoto.url}
-                                  alt="Completion"
-                                  className="w-9 h-9 rounded-lg object-cover border border-emerald-300 dark:border-emerald-700 ring-1 ring-emerald-400 cursor-pointer hover:opacity-80 transition-opacity"
-                                  onClick={() => handleOpenAction(c, 'review')}
-                                  title="Cleaner Completion Photo"
-                                />
-                              )}
-                            </div>
-                          </td>
-
-                          <td className="py-3.5 px-4 text-right space-x-1 whitespace-nowrap">
-                            {c.status === 'submitted' && (
-                              <button
-                                onClick={() => handleOpenAction(c, 'verify')}
-                                className="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-xs cursor-pointer inline-flex items-center gap-1 transition-all"
-                              >
-                                <UserCheck className="w-3.5 h-3.5" />
-                                <span>Verify</span>
-                              </button>
-                            )}
-
-                            {c.status === 'verified' && (
-                              <button
-                                onClick={() => handleOpenAction(c, 'assign')}
-                                className="px-3 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs shadow-xs cursor-pointer inline-flex items-center gap-1 transition-all"
-                              >
-                                <HardHat className="w-3.5 h-3.5" />
-                                <span>Assign</span>
-                              </button>
-                            )}
-
-                            {c.status === 'awaiting_verification' && (
-                              <button
-                                onClick={() => handleOpenAction(c, 'review')}
-                                className="px-3 py-1.5 rounded-xl bg-orange-600 hover:bg-orange-700 text-white font-bold text-xs shadow-xs cursor-pointer inline-flex items-center gap-1 transition-all"
-                              >
-                                <FileCheck className="w-3.5 h-3.5" />
-                                <span>Review Proof</span>
-                              </button>
-                            )}
-
-                            <button
-                              onClick={() => handleOpenAction(c, 'details')}
-                              className="px-2.5 py-1.5 rounded-xl border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 font-semibold text-xs cursor-pointer transition-colors"
-                            >
-                              Details
-                            </button>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
+                      <button
+                        onClick={() => openAction(c, 'reject')}
+                        className="py-2.5 px-3 rounded-xl border border-rose-500/30 hover:bg-rose-950/40 text-rose-300 font-mono text-xs uppercase tracking-wider flex items-center justify-center gap-1.5 transition-all cursor-pointer min-h-[44px]"
+                      >
+                        <XCircle className="w-3.5 h-3.5" />
+                        <span>REJECT</span>
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           )}
         </div>
       )}
 
-      {/* VIEW MODE: MY ASSIGNED CLEANERS */}
-      {viewMode === 'my_cleaners' && (
+      {/* =========================================================================
+          TAB 2: DISPATCH & ASSIGN QUEUE (Verified complaints needing a cleaner)
+         ========================================================================= */}
+      {activeTab === 'assign_queue' && (
         <div className="space-y-4">
-          <div className="bg-white dark:bg-slate-900 p-5 sm:p-6 rounded-3xl border border-slate-200/80 dark:border-slate-800 shadow-sm flex items-center justify-between">
+          <div className="flex items-center justify-between px-1">
             <div>
-              <h3 className="text-base font-bold text-slate-900 dark:text-white">
-                My Operational Cleaners Team ({myCleaners.length})
+              <h3 className="font-mono-display text-sm uppercase tracking-wider font-bold text-white flex items-center gap-2">
+                <Send className="w-4 h-4 text-cyan-400" />
+                <span>02. DISPATCH & ASSIGN CLEANER</span>
               </h3>
-              <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                Cleaners assigned directly to your supervisory operational scope by the municipal administrator.
+              <p className="text-xs text-slate-400 mt-0.5">
+                Verified complaints waiting for manual cleaner assignment in their locality.
               </p>
             </div>
           </div>
 
-          {myCleaners.length === 0 ? (
-            <div className="p-12 text-center bg-white dark:bg-slate-900 rounded-3xl border border-slate-200/80 dark:border-slate-800 shadow-sm space-y-3">
-              <UserCheck className="w-12 h-12 text-slate-300 dark:text-slate-600 mx-auto" />
-              <h4 className="text-base font-bold text-slate-800 dark:text-slate-200">
-                No Cleaners Assigned to Your Team Yet
-              </h4>
-              <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 max-w-md mx-auto leading-relaxed">
-                Municipal administrators assign certified cleaners to supervisors upon application review or account provisioning. Contact your administrator to assign cleaners to your team.
-              </p>
+          {verifiedComplaints.length === 0 ? (
+            <div className="p-12 text-center bg-[#12161c] rounded-3xl border border-white/[0.08] shadow-xs space-y-2">
+              <CheckCircle2 className="w-10 h-10 text-emerald-400 mx-auto" />
+              <h4 className="font-mono text-sm font-bold text-white">ALL VERIFIED COMPLAINTS DISPATCHED</h4>
+              <p className="text-xs text-slate-400">No complaints currently waiting for cleaner assignment.</p>
             </div>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {myCleaners.map((cleaner) => {
-                const cleanerServiceAreas = serviceAreas.filter(
-                  (sa) => sa.cleanerId === cleaner.id && sa.isApproved
+              {verifiedComplaints.map((c) => {
+                const initialPhoto = c.photos.find((p) => isInitialComplaintPhoto(p.photoType));
+                return (
+                  <div
+                    key={c.id}
+                    className="bg-[#12161c] rounded-2xl border border-white/[0.08] overflow-hidden flex flex-col justify-between shadow-xs hover:border-cyan-500/30 transition-all"
+                  >
+                    <div>
+                      {initialPhoto && (
+                        <div className="h-40 bg-black relative">
+                          <img
+                            src={initialPhoto.url}
+                            alt="Report"
+                            className="w-full h-full object-cover"
+                          />
+                          <div className="absolute top-2.5 left-2.5">
+                            <StatusBadge status={c.status} size="sm" />
+                          </div>
+                          <div className="absolute top-2.5 right-2.5">
+                            <UrgencyBadge urgency={c.urgency} />
+                          </div>
+                        </div>
+                      )}
+
+                      <div className="p-4 space-y-2">
+                        <div className="flex items-center justify-between text-xs font-mono">
+                          <span className="text-emerald-400 font-bold">{c.trackingCode}</span>
+                          <span className="text-slate-500 text-[10px]">
+                            {new Date(c.createdAt).toLocaleDateString()}
+                          </span>
+                        </div>
+                        <h4 className="font-bold text-sm text-white line-clamp-1">{c.address}</h4>
+                        <p className="text-xs text-slate-400 font-mono">{c.localityName}</p>
+                      </div>
+                    </div>
+
+                    <div className="p-3 border-t border-white/5">
+                      <button
+                        onClick={() => openAction(c, 'assign')}
+                        className="w-full py-2.5 px-3 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-white font-mono font-bold text-xs uppercase tracking-wider flex items-center justify-center gap-1.5 transition-all cursor-pointer min-h-[44px]"
+                      >
+                        <HardHat className="w-3.5 h-3.5" />
+                        <span>PICK CLEANER & DISPATCH</span>
+                      </button>
+                    </div>
+                  </div>
                 );
-                const assignedTasks = complaints.filter(
-                  (c) => c.assignedCleanerId === cleaner.id
-                );
-                const inProgressTasks = assignedTasks.filter(
-                  (c) => c.status === 'in_progress'
-                );
-                const completedTasks = assignedTasks.filter(
-                  (c) => c.status === 'completed'
-                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* =========================================================================
+          TAB 3: PHOTO AUDIT QUEUE (Awaiting verification)
+         ========================================================================= */}
+      {activeTab === 'audit_queue' && (
+        <div className="space-y-4">
+          <div className="flex items-center justify-between px-1">
+            <div>
+              <h3 className="font-mono-display text-sm uppercase tracking-wider font-bold text-white flex items-center gap-2">
+                <Eye className="w-4 h-4 text-purple-400" />
+                <span>03. SIDE-BY-SIDE PHOTO AUDIT</span>
+              </h3>
+              <p className="text-xs text-slate-400 mt-0.5">
+                Inspect before & after photographic evidence to approve final resolution or request rework.
+              </p>
+            </div>
+          </div>
+
+          {auditingComplaints.length === 0 ? (
+            <div className="p-12 text-center bg-[#12161c] rounded-3xl border border-white/[0.08] shadow-xs space-y-2">
+              <CheckCircle2 className="w-10 h-10 text-emerald-400 mx-auto" />
+              <h4 className="font-mono text-sm font-bold text-white">ALL CLEANER WORK AUDITED</h4>
+              <p className="text-xs text-slate-400">No complaints currently awaiting supervisor resolution audit.</p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {auditingComplaints.map((c) => {
+                const beforePhoto = c.photos.find((p) => isInitialComplaintPhoto(p.photoType));
+                const afterPhoto = c.photos.find((p) => isCompletionComplaintPhoto(p.photoType));
 
                 return (
                   <div
-                    key={cleaner.id}
-                    className="bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 rounded-2xl p-5 shadow-2xs space-y-4"
+                    key={c.id}
+                    className="bg-[#12161c] rounded-2xl border border-white/[0.08] p-4 space-y-4 shadow-xs"
                   >
                     <div className="flex items-start justify-between">
-                      <div className="flex items-center gap-2.5">
-                        <span className="w-9 h-9 rounded-xl bg-amber-100 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300 flex items-center justify-center font-bold text-xs">
-                          {cleaner.fullName.charAt(0)}
-                        </span>
-                        <div>
-                          <h4 className="font-bold text-sm text-slate-900 dark:text-white">{cleaner.fullName}</h4>
-                          <p className="text-xs text-slate-500 dark:text-slate-400 font-mono">{cleaner.email}</p>
+                      <div>
+                        <div className="flex items-center gap-2 mb-1">
+                          <span className="text-emerald-400 font-mono font-bold text-xs">{c.trackingCode}</span>
+                          <StatusBadge status={c.status} size="sm" />
                         </div>
+                        <h4 className="text-sm font-bold text-white">{c.address}</h4>
+                        <p className="text-xs text-slate-400 font-mono">{c.localityName}</p>
                       </div>
-                      <span
-                        className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider border ${
-                          cleaner.accountStatus === 'active'
-                            ? 'bg-emerald-50 dark:bg-emerald-950/50 text-emerald-800 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800'
-                            : 'bg-rose-50 dark:bg-rose-950/50 text-rose-800 dark:text-rose-300 border-rose-200 dark:border-rose-800'
-                        }`}
+
+                      <button
+                        onClick={() => openAction(c, 'audit')}
+                        className="py-2 px-3 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-mono text-xs font-bold uppercase tracking-wider transition-all cursor-pointer min-h-[44px]"
                       >
-                        {cleaner.accountStatus}
-                      </span>
+                        AUDIT NOW
+                      </button>
                     </div>
 
-                    <div className="text-xs text-slate-600 dark:text-slate-300">
-                      <span className="text-slate-400 dark:text-slate-500">Phone: </span>
-                      <span className="font-medium font-mono">{cleaner.phoneNumber}</span>
-                    </div>
-
-                    {/* Authorized Localities */}
-                    <div className="space-y-1.5 text-xs">
-                      <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500 block">
-                        Authorized Service Localities:
-                      </span>
-                      <div className="flex flex-wrap gap-1.5">
-                        {cleanerServiceAreas.length > 0 ? (
-                          cleanerServiceAreas.map((sa) => (
-                            <span
-                              key={sa.localityId}
-                              className="px-2.5 py-0.5 rounded-lg text-[10px] font-semibold bg-emerald-50 dark:bg-emerald-950/50 border border-emerald-200 dark:border-emerald-800 text-emerald-800 dark:text-emerald-300"
-                            >
-                              {sa.localityName}
-                            </span>
-                          ))
+                    {/* Dual photo preview */}
+                    <div className="grid grid-cols-2 gap-2">
+                      <div className="bg-[#0b0d10] rounded-xl overflow-hidden border border-white/5">
+                        <span className="font-mono text-[9px] text-amber-400 p-1.5 block">01. BEFORE</span>
+                        {beforePhoto ? (
+                          <img src={beforePhoto.url} alt="Before" className="w-full h-32 object-cover" />
                         ) : (
-                          <span className="text-amber-700 dark:text-amber-400 italic text-[11px]">
-                            No service areas approved yet
-                          </span>
+                          <div className="h-32 flex items-center justify-center text-xs text-slate-600">NO PHOTO</div>
                         )}
                       </div>
-                    </div>
 
-                    {/* Work Assignment Counters */}
-                    <div className="grid grid-cols-3 gap-2 pt-2 border-t border-slate-100 dark:border-slate-800 text-center">
-                      <div className="p-2 bg-slate-50 dark:bg-slate-800/60 rounded-xl">
-                        <span className="text-sm font-black font-mono tabular-nums text-slate-800 dark:text-slate-200">
-                          {assignedTasks.length}
-                        </span>
-                        <p className="text-[9px] uppercase font-bold text-slate-400">Assigned</p>
-                      </div>
-                      <div className="p-2 bg-purple-50 dark:bg-purple-950/50 rounded-xl">
-                        <span className="text-sm font-black font-mono tabular-nums text-purple-800 dark:text-purple-300">
-                          {inProgressTasks.length}
-                        </span>
-                        <p className="text-[9px] uppercase font-bold text-purple-600 dark:text-purple-400">In Progress</p>
-                      </div>
-                      <div className="p-2 bg-emerald-50 dark:bg-emerald-950/50 rounded-xl">
-                        <span className="text-sm font-black font-mono tabular-nums text-emerald-800 dark:text-emerald-300">
-                          {completedTasks.length}
-                        </span>
-                        <p className="text-[9px] uppercase font-bold text-emerald-600 dark:text-emerald-400">Completed</p>
+                      <div className="bg-[#0b0d10] rounded-xl overflow-hidden border border-white/5">
+                        <span className="font-mono text-[9px] text-emerald-400 p-1.5 block">02. AFTER</span>
+                        {afterPhoto ? (
+                          <img src={afterPhoto.url} alt="After" className="w-full h-32 object-cover" />
+                        ) : (
+                          <div className="h-32 flex items-center justify-center text-xs text-slate-600">NO PHOTO</div>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -767,623 +759,739 @@ export const SupervisorView: React.FC<SupervisorViewProps> = ({
         </div>
       )}
 
-      {/* VIEW MODE 2: CLEANER APPLICATIONS REVIEW */}
-      {viewMode === 'cleaners' && (
-        <div className="space-y-6">
-          <div className="bg-white dark:bg-slate-900 p-6 sm:p-8 rounded-3xl border border-slate-200/80 dark:border-slate-800 shadow-sm space-y-4">
-            <div>
-              <h3 className="text-base font-bold text-slate-900 dark:text-white">
-                Cleaner Applications Awaiting Supervisor Review
-              </h3>
-              <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-                Review applicant identity, verify preferred service localities, and authorize or reject their municipal cleaner credential.
-              </p>
+      {/* =========================================================================
+          TAB 4: ALL COMPLAINTS (Registry & Audit Explorer)
+         ========================================================================= */}
+      {activeTab === 'all' && (
+        <div className="space-y-4">
+          <div className="bg-[#12161c] p-3.5 rounded-2xl border border-white/[0.08] flex flex-wrap items-center justify-between gap-3 shadow-xs">
+            <div className="relative flex-1 min-w-[240px]">
+              <Search className="w-4 h-4 text-slate-500 absolute left-3.5 top-3" />
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Search by Tracking ID, Address, Resident or Phone..."
+                className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-white/10 bg-[#0b0d10] text-white placeholder:text-slate-600 text-xs font-mono focus:border-emerald-500/60 focus:outline-hidden transition-colors min-h-[44px]"
+              />
             </div>
 
-            {appReviewMsg && (
-              <div
-                className={`p-3.5 rounded-2xl border text-xs flex items-center gap-2.5 ${
-                  appReviewMsg.error
-                    ? 'bg-rose-50 dark:bg-rose-950/40 border-rose-200 dark:border-rose-800 text-rose-800 dark:text-rose-200'
-                    : 'bg-emerald-50 dark:bg-emerald-950/40 border-emerald-200 dark:border-emerald-800 text-emerald-800 dark:text-emerald-200'
-                }`}
+            <div className="flex items-center gap-2">
+              <select
+                value={localityFilter}
+                onChange={(e) => setLocalityFilter(e.target.value)}
+                className="px-3 py-2.5 rounded-xl border border-white/10 bg-[#0b0d10] text-slate-300 text-xs font-mono cursor-pointer focus:border-emerald-500/60 focus:outline-hidden min-h-[44px]"
               >
-                {appReviewMsg.error ? (
-                  <AlertTriangle className="w-4 h-4 shrink-0" />
-                ) : (
-                  <CheckCircle2 className="w-4 h-4 shrink-0" />
-                )}
-                <span>{appReviewMsg.text}</span>
-              </div>
-            )}
+                <option value="all">ALL LOCALITIES</option>
+                {localities.map((l) => (
+                  <option key={l.id} value={l.id}>
+                    {l.name}
+                  </option>
+                ))}
+              </select>
 
-            {cleanerApplications.length === 0 ? (
-              <div className="p-12 text-center bg-slate-50 dark:bg-slate-800/40 rounded-2xl border border-slate-200 dark:border-slate-800 space-y-2">
-                <HardHat className="w-10 h-10 text-slate-300 dark:text-slate-600 mx-auto" />
-                <p className="text-xs text-slate-500 dark:text-slate-400 font-medium">
-                  No cleaner applications currently in the system.
-                </p>
-              </div>
-            ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {cleanerApplications.map((app) => {
-                  const applicantServiceAreas = serviceAreas.filter((sa) => sa.cleanerId === app.cleanerId);
-                  const selectedLocs =
-                    appLocalitySelection[app.cleanerId] ||
-                    applicantServiceAreas.map((sa) => sa.localityId);
+              <select
+                value={urgencyFilter}
+                onChange={(e) => setUrgencyFilter(e.target.value)}
+                className="px-3 py-2.5 rounded-xl border border-white/10 bg-[#0b0d10] text-slate-300 text-xs font-mono cursor-pointer focus:border-emerald-500/60 focus:outline-hidden min-h-[44px]"
+              >
+                <option value="all">ALL URGENCIES</option>
+                <option value="low">LOW</option>
+                <option value="normal">NORMAL</option>
+                <option value="high">HIGH</option>
+                <option value="critical">CRITICAL</option>
+              </select>
+            </div>
+          </div>
 
-                  return (
-                    <div
-                      key={app.id}
-                      className={`p-5 rounded-2xl border flex flex-col justify-between space-y-4 shadow-2xs ${
-                        app.status === 'pending'
-                          ? 'bg-white dark:bg-slate-900 border-amber-300 dark:border-amber-700/80 ring-1 ring-amber-200 dark:ring-amber-800/50'
-                          : app.status === 'approved'
-                          ? 'bg-emerald-50/40 dark:bg-emerald-950/20 border-emerald-200 dark:border-emerald-800/80'
-                          : 'bg-rose-50/40 dark:bg-rose-950/20 border-rose-200 dark:border-rose-800/80'
-                      }`}
-                    >
-                      <div className="space-y-3">
-                        <div className="flex items-start justify-between">
-                          <div>
-                            <h4 className="font-bold text-sm text-slate-900 dark:text-white">{app.cleanerName}</h4>
-                            <p className="text-xs text-slate-500 dark:text-slate-400 font-mono">{app.cleanerEmail}</p>
-                          </div>
-                          <span
-                            className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider ${
-                              app.status === 'approved'
-                                ? 'bg-emerald-100 dark:bg-emerald-950/70 text-emerald-800 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800'
-                                : app.status === 'rejected'
-                                ? 'bg-rose-100 dark:bg-rose-950/70 text-rose-800 dark:text-rose-300 border border-rose-300 dark:border-rose-800'
-                                : 'bg-amber-100 dark:bg-amber-950/70 text-amber-800 dark:text-amber-300 border border-amber-300 dark:border-amber-800'
-                            }`}
-                          >
-                            {app.status}
-                          </span>
-                        </div>
-
-                        {/* Preferred Localities */}
-                        <div className="space-y-1.5">
-                          <label className="text-[11px] font-bold text-slate-700 dark:text-slate-300 block">
-                            Preferred Municipal Service Localities:
-                          </label>
-                          <div className="flex flex-wrap gap-1.5">
-                            {applicantServiceAreas.map((sa) => {
-                              const isChecked = selectedLocs.includes(sa.localityId);
-                              return (
-                                <button
-                                  type="button"
-                                  key={sa.localityId}
-                                  onClick={() =>
-                                    app.status === 'pending' &&
-                                    handleToggleLocalityForApp(app.cleanerId, sa.localityId)
-                                  }
-                                  disabled={app.status !== 'pending'}
-                                  className={`px-2.5 py-1 rounded-xl text-xs font-semibold flex items-center gap-1 border transition-all cursor-pointer ${
-                                    isChecked
-                                      ? 'bg-emerald-600 text-white border-emerald-700 shadow-2xs'
-                                      : 'bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 border-slate-300 dark:border-slate-700'
-                                  }`}
-                                >
-                                  {isChecked && <Check className="w-3 h-3" />}
-                                  <span>{sa.localityName}</span>
-                                </button>
-                              );
-                            })}
-                          </div>
-                        </div>
-
-                        {/* Review Notes */}
-                        {app.status === 'pending' ? (
-                          <div className="space-y-1">
-                            <label className="text-[11px] font-bold text-slate-700 dark:text-slate-300 block">
-                              Supervisor Review Notes (Optional):
-                            </label>
-                            <input
-                              type="text"
-                              value={cleanerAppNotes[app.id] || ''}
-                              onChange={(e) =>
-                                setCleanerAppNotes((prev) => ({ ...prev, [app.id]: e.target.value }))
-                              }
-                              placeholder="e.g. Identity and residency verified."
-                              className="w-full px-3.5 py-2 rounded-xl border border-slate-300 dark:border-slate-700 text-xs bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 focus:outline-hidden transition-colors"
-                            />
-                          </div>
-                        ) : (
-                          app.reviewNotes && (
-                            <p className="text-xs text-slate-600 dark:text-slate-300 bg-white/70 dark:bg-slate-800/70 p-2.5 rounded-xl border border-slate-200 dark:border-slate-700">
-                              <span className="font-bold">Supervisor Note:</span> {app.reviewNotes}
-                            </p>
-                          )
-                        )}
-                      </div>
-
-                      {/* Action buttons if pending */}
-                      {app.status === 'pending' && (
-                        <div className="flex items-center gap-2 pt-2 border-t border-slate-200 dark:border-slate-700">
-                          <button
-                            type="button"
-                            onClick={() => handleReviewCleanerApp(app, 'approved')}
-                            className="flex-1 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold shadow-xs transition-colors cursor-pointer flex items-center justify-center gap-1.5"
-                          >
-                            <CheckCircle2 className="w-3.5 h-3.5" />
-                            <span>Approve Application</span>
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => handleReviewCleanerApp(app, 'rejected')}
-                            className="py-2.5 px-4 rounded-xl border border-rose-300 dark:border-rose-700 text-rose-700 dark:text-rose-300 hover:bg-rose-50 dark:hover:bg-rose-950/40 text-xs font-bold transition-colors cursor-pointer"
-                          >
-                            Reject
-                          </button>
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            )}
+          <div className="bg-[#12161c] rounded-2xl border border-white/[0.08] overflow-hidden shadow-xs">
+            <div className="overflow-x-auto">
+              <table className="w-full text-left border-collapse text-xs">
+                <thead>
+                  <tr className="border-b border-white/[0.08] bg-[#0b0d10] text-slate-400 font-mono-display uppercase tracking-wider text-[10px]">
+                    <th className="py-3 px-4">TRACKING</th>
+                    <th className="py-3 px-4">ADDRESS / SECTOR</th>
+                    <th className="py-3 px-4">RESIDENT</th>
+                    <th className="py-3 px-4">STATUS</th>
+                    <th className="py-3 px-4">URGENCY</th>
+                    <th className="py-3 px-4 text-right">ACTION</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-white/5 font-mono">
+                  {filteredAllComplaints.map((c) => (
+                    <tr key={c.id} className="hover:bg-white/[0.02] transition-colors">
+                      <td className="py-3 px-4 text-emerald-400 font-bold">{c.trackingCode}</td>
+                      <td className="py-3 px-4">
+                        <span className="text-white block font-sans font-medium">{c.address}</span>
+                        <span className="text-slate-500 text-[10px]">{c.localityName}</span>
+                      </td>
+                      <td className="py-3 px-4">
+                        <span className="text-slate-300 block">{c.residentName}</span>
+                        <span className="text-slate-500 text-[10px]">{c.residentPhone}</span>
+                      </td>
+                      <td className="py-3 px-4">
+                        <StatusBadge status={c.status} size="sm" />
+                      </td>
+                      <td className="py-3 px-4">
+                        <UrgencyBadge urgency={c.urgency} />
+                      </td>
+                      <td className="py-3 px-4 text-right">
+                        <button
+                          onClick={() => openAction(c, 'details')}
+                          className="px-3 py-1.5 rounded-lg border border-white/10 hover:bg-white/5 text-slate-300 text-xs font-mono transition-colors cursor-pointer"
+                        >
+                          INSPECT
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </div>
         </div>
       )}
 
-      {/* COMPLAINT MODAL */}
+      {/* =========================================================================
+          TAB 5: CLEANER ONBOARDING APPLICATIONS
+         ========================================================================= */}
+      {activeTab === 'applications' && (
+        <div className="space-y-4">
+          <div className="flex items-center justify-between px-1">
+            <div>
+              <h3 className="font-mono-display text-sm uppercase tracking-wider font-bold text-white flex items-center gap-2">
+                <HardHat className="w-4 h-4 text-emerald-400" />
+                <span>CLEANER ONBOARDING REVIEW</span>
+              </h3>
+              <p className="text-xs text-slate-400 mt-0.5">
+                Review submitted cleaner applications and authorize service localities.
+              </p>
+            </div>
+          </div>
+
+          {appReviewMsg && (
+            <div
+              className={`p-3.5 rounded-xl border text-xs font-mono flex items-center justify-between ${
+                appReviewMsg.error
+                  ? 'bg-rose-950/40 border-rose-500/30 text-rose-300'
+                  : 'bg-emerald-950/40 border-emerald-500/30 text-emerald-300'
+              }`}
+            >
+              <span>{appReviewMsg.text}</span>
+              <button onClick={() => setAppReviewMsg(null)} className="p-1 cursor-pointer">
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          )}
+
+          {pendingApps.length === 0 ? (
+            <div className="p-12 text-center bg-[#12161c] rounded-3xl border border-white/[0.08] shadow-xs space-y-2">
+              <CheckCircle2 className="w-10 h-10 text-emerald-400 mx-auto" />
+              <h4 className="font-mono text-sm font-bold text-white">NO PENDING APPLICATIONS</h4>
+              <p className="text-xs text-slate-400">All cleaner applicants have been reviewed.</p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {pendingApps.map((app) => (
+                <div
+                  key={app.id}
+                  className="bg-[#12161c] rounded-2xl border border-white/[0.08] p-5 space-y-4 shadow-xs"
+                >
+                  <div className="flex items-start justify-between">
+                    <div>
+                      <h4 className="text-base font-bold text-white font-sans">{app.cleanerName}</h4>
+                      <p className="text-xs text-slate-400 font-mono mt-0.5">
+                        {app.cleanerEmail} • {app.cleanerPhone || 'No phone'}
+                      </p>
+                      <span className="text-[10px] text-slate-500 font-mono block mt-1">
+                        APPLIED: {new Date(app.createdAt).toLocaleDateString()}
+                      </span>
+                    </div>
+                    <span className="px-2 py-0.5 rounded-full text-[10px] font-mono uppercase bg-amber-950/60 border border-amber-500/40 text-amber-300">
+                      PENDING REVIEW
+                    </span>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <span className="font-mono text-[10px] uppercase text-slate-400 font-bold block">
+                      PREFERRED LOCALITIES ({(app.preferredLocalityIds || []).length}):
+                    </span>
+                    <div className="flex flex-wrap gap-1.5">
+                      {(app.preferredLocalityIds || []).map((locId) => {
+                        const loc = localities.find((l) => l.id === locId);
+                        return (
+                          <span
+                            key={locId}
+                            className="px-2 py-1 rounded-lg bg-[#0b0d10] border border-white/10 text-[11px] font-mono text-slate-300"
+                          >
+                            {loc?.name || locId}
+                          </span>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  <div className="border-t border-white/5 pt-3 flex gap-2">
+                    <button
+                      onClick={() => handleApproveApplication(app)}
+                      className="flex-1 py-2.5 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-mono font-bold text-xs uppercase tracking-wider flex items-center justify-center gap-1.5 transition-all cursor-pointer min-h-[44px]"
+                    >
+                      <Check className="w-3.5 h-3.5" />
+                      <span>APPROVE APPLICANT</span>
+                    </button>
+                    <button
+                      onClick={() => handleRejectApplication(app)}
+                      className="py-2.5 px-3 rounded-xl border border-rose-500/30 hover:bg-rose-950/40 text-rose-300 font-mono text-xs uppercase tracking-wider flex items-center justify-center gap-1.5 transition-all cursor-pointer min-h-[44px]"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                      <span>DECLINE</span>
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* =========================================================================
+          TAB 6: MY CLEANER TEAM
+         ========================================================================= */}
+      {activeTab === 'team' && (
+        <div className="space-y-4">
+          <div className="flex items-center justify-between px-1">
+            <div>
+              <h3 className="font-mono-display text-sm uppercase tracking-wider font-bold text-white flex items-center gap-2">
+                <Users className="w-4 h-4 text-blue-400" />
+                <span>MY CLEANER TEAM ({myCleaners.length})</span>
+              </h3>
+              <p className="text-xs text-slate-400 mt-0.5">
+                Cleaners assigned under your municipal supervision roster.
+              </p>
+            </div>
+          </div>
+
+          {myCleaners.length === 0 ? (
+            <div className="p-12 text-center bg-[#12161c] rounded-3xl border border-white/[0.08] shadow-xs space-y-2">
+              <HardHat className="w-10 h-10 text-slate-600 mx-auto" />
+              <h4 className="font-mono text-sm font-bold text-white">NO TEAM MEMBERS ASSIGNED YET</h4>
+              <p className="text-xs text-slate-400">Approve cleaner applicants or ask your administrator to assign cleaners to your team.</p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {myCleaners.map((cleaner) => {
+                const cleanerAreas = serviceAreas.filter((sa) => sa.cleanerId === cleaner.id && sa.isApproved);
+                const activeTasks = complaints.filter(
+                  (c) => c.assignedCleanerId === cleaner.id && (c.status === 'assigned' || c.status === 'in_progress')
+                );
+
+                return (
+                  <div
+                    key={cleaner.id}
+                    className="bg-[#12161c] rounded-2xl border border-white/[0.08] p-5 space-y-3 shadow-xs"
+                  >
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2.5">
+                        <div className="w-9 h-9 rounded-xl bg-amber-950/60 border border-amber-500/30 text-amber-300 flex items-center justify-center font-bold font-mono">
+                          {cleaner.fullName.charAt(0)}
+                        </div>
+                        <div>
+                          <h4 className="text-sm font-bold text-white font-sans">{cleaner.fullName}</h4>
+                          <span className="text-[10px] text-slate-400 font-mono">{cleaner.email}</span>
+                        </div>
+                      </div>
+                      <span className="px-2 py-0.5 rounded-full text-[10px] font-mono uppercase bg-emerald-950/60 text-emerald-300 border border-emerald-500/30">
+                        {cleaner.accountStatus}
+                      </span>
+                    </div>
+
+                    <div className="p-2.5 rounded-xl bg-[#0b0d10] border border-white/5 space-y-1 text-xs font-mono">
+                      <div className="flex justify-between text-slate-400">
+                        <span>PHONE:</span>
+                        <span className="text-white">{cleaner.phoneNumber}</span>
+                      </div>
+                      <div className="flex justify-between text-slate-400">
+                        <span>ACTIVE TASKS:</span>
+                        <span className="text-amber-400 font-bold">{activeTasks.length}</span>
+                      </div>
+                      <div className="flex justify-between text-slate-400">
+                        <span>AREAS:</span>
+                        <span className="text-cyan-400 font-bold">{cleanerAreas.length} LOCALITIES</span>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* =========================================================================
+          COMPLAINT ACTION MODAL (Verify, Assign, Audit, Reject, Details)
+         ========================================================================= */}
       {selectedComplaint && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-xs overflow-y-auto">
-          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl w-full max-w-2xl max-h-[90vh] overflow-y-auto p-6 sm:p-7 shadow-2xl space-y-5 my-8 text-slate-900 dark:text-slate-100">
-            <div className="flex items-start justify-between gap-4">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-xs overflow-y-auto animate-in fade-in duration-150">
+          <div className="bg-[#0f1217] border border-white/10 rounded-3xl w-full max-w-2xl max-h-[90vh] overflow-y-auto p-6 sm:p-7 shadow-2xl space-y-5 my-8 text-slate-100">
+            {/* Top Bar */}
+            <div className="flex items-start justify-between border-b border-white/10 pb-4">
               <div>
                 <div className="flex items-center gap-2 mb-1">
-                  <span className="font-mono font-bold text-slate-900 dark:text-white text-base">
+                  <span className="text-emerald-400 font-mono font-bold text-sm">
                     {selectedComplaint.trackingCode}
                   </span>
                   <StatusBadge status={selectedComplaint.status} size="sm" />
                   <UrgencyBadge urgency={selectedComplaint.urgency} />
                 </div>
-                <p className="text-xs text-slate-500 dark:text-slate-400">
-                  {selectedComplaint.address} • {selectedComplaint.localityName}
+                <h3 className="text-base font-bold text-white font-sans">{selectedComplaint.address}</h3>
+                <p className="text-xs text-slate-400 font-mono mt-0.5">
+                  {selectedComplaint.localityName} • SUBMITTED BY {selectedComplaint.residentName}
                 </p>
               </div>
+
               <button
                 onClick={() => setSelectedComplaint(null)}
-                className="p-1.5 rounded-xl text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer shrink-0 transition-colors"
-                aria-label="Close modal"
+                className="p-1.5 rounded-xl text-slate-400 hover:text-white hover:bg-white/5 cursor-pointer shrink-0 transition-colors"
+                aria-label="Close"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            {/* TAB SELECTOR IN MODAL */}
-            <div className="flex border-b border-slate-200 dark:border-slate-800 gap-4 text-xs font-bold">
+            {/* Modal Sub-Tabs */}
+            <div className="flex rounded-xl bg-[#12161c] p-1 border border-white/5 text-xs font-mono">
+              <button
+                type="button"
+                onClick={() => setModalTab('details')}
+                className={`flex-1 py-1.5 rounded-lg font-bold uppercase transition-all cursor-pointer ${
+                  modalTab === 'details' ? 'bg-white/10 text-white shadow-xs' : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                DETAILS & PHOTOS
+              </button>
               {selectedComplaint.status === 'submitted' && (
                 <button
-                  onClick={() => setActionTab('verify')}
-                  className={`pb-2.5 border-b-2 transition-colors cursor-pointer ${
-                    actionTab === 'verify'
-                      ? 'border-emerald-600 text-emerald-700 dark:text-emerald-400'
-                      : 'border-transparent text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
+                  type="button"
+                  onClick={() => setModalTab('verify')}
+                  className={`flex-1 py-1.5 rounded-lg font-bold uppercase transition-all cursor-pointer ${
+                    modalTab === 'verify' ? 'bg-amber-950/60 text-amber-300' : 'text-slate-400 hover:text-white'
                   }`}
                 >
-                  Verify Submission
+                  VERIFY CALL
                 </button>
               )}
-              {selectedComplaint.status === 'verified' && (
+              {(selectedComplaint.status === 'submitted' || selectedComplaint.status === 'verified') && (
                 <button
-                  onClick={() => setActionTab('assign')}
-                  className={`pb-2.5 border-b-2 transition-colors cursor-pointer ${
-                    actionTab === 'assign'
-                      ? 'border-blue-600 text-blue-700 dark:text-blue-400'
-                      : 'border-transparent text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
+                  type="button"
+                  onClick={() => setModalTab('assign')}
+                  className={`flex-1 py-1.5 rounded-lg font-bold uppercase transition-all cursor-pointer ${
+                    modalTab === 'assign' ? 'bg-cyan-950/60 text-cyan-300' : 'text-slate-400 hover:text-white'
                   }`}
                 >
-                  Assign Cleaner
+                  ASSIGN CLEANER
                 </button>
               )}
               {selectedComplaint.status === 'awaiting_verification' && (
                 <button
-                  onClick={() => setActionTab('review')}
-                  className={`pb-2.5 border-b-2 transition-colors cursor-pointer ${
-                    actionTab === 'review'
-                      ? 'border-orange-600 text-orange-700 dark:text-orange-400'
-                      : 'border-transparent text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
+                  type="button"
+                  onClick={() => setModalTab('audit')}
+                  className={`flex-1 py-1.5 rounded-lg font-bold uppercase transition-all cursor-pointer ${
+                    modalTab === 'audit' ? 'bg-purple-950/60 text-purple-300' : 'text-slate-400 hover:text-white'
                   }`}
                 >
-                  Audit Completion Proof
+                  PHOTO AUDIT
                 </button>
               )}
-              <button
-                onClick={() => setActionTab('details')}
-                className={`pb-2.5 border-b-2 transition-colors cursor-pointer ${
-                  actionTab === 'details'
-                    ? 'border-slate-900 dark:border-white text-slate-900 dark:text-white'
-                    : 'border-transparent text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
-                }`}
-              >
-                Details & History
-              </button>
+              {selectedComplaint.status === 'submitted' && (
+                <button
+                  type="button"
+                  onClick={() => setModalTab('reject')}
+                  className={`flex-1 py-1.5 rounded-lg font-bold uppercase transition-all cursor-pointer ${
+                    modalTab === 'reject' ? 'bg-rose-950/60 text-rose-300' : 'text-slate-400 hover:text-white'
+                  }`}
+                >
+                  REJECT
+                </button>
+              )}
             </div>
 
-            {/* ACTION 1: VERIFY */}
-            {actionTab === 'verify' && (
-              <div className="space-y-4 text-xs">
-                <div className="p-4 rounded-2xl bg-blue-50 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-800/80 text-blue-900 dark:text-blue-200 space-y-2 shadow-2xs">
-                  <div className="flex items-center gap-2 font-bold">
-                    <PhoneCall className="w-4 h-4 text-blue-600 dark:text-blue-400" />
-                    <span>Resident Phone Contact Verification</span>
-                  </div>
-                  <p className="leading-relaxed">
-                    Call resident <span className="font-semibold">{selectedComplaint.residentName}</span> at{' '}
-                    <a
-                      href={`tel:${selectedComplaint.residentPhone}`}
-                      className="font-mono font-bold underline text-blue-700 dark:text-blue-400"
-                    >
-                      {selectedComplaint.residentPhone}
-                    </a>{' '}
-                    to confirm location accuracy before dispatch.
-                  </p>
-                  <label className="flex items-center gap-2 pt-1 font-semibold text-blue-900 dark:text-blue-200 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={phoneConfirmed}
-                      onChange={(e) => setPhoneConfirmed(e.target.checked)}
-                      className="rounded text-blue-600"
-                    />
-                    <span>I confirm telephone contact was made with the resident.</span>
-                  </label>
-                </div>
-
-                <div className="grid grid-cols-2 gap-3">
+            {/* DETAILS TAB */}
+            {modalTab === 'details' && (
+              <div className="space-y-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs font-mono bg-[#12161c] p-3.5 rounded-2xl border border-white/[0.08]">
                   <div>
-                    <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1.5">
-                      Set Urgency Level
-                    </label>
-                    <select
-                      value={urgencySelection}
-                      onChange={(e) => setUrgencySelection(e.target.value as UrgencyLevel)}
-                      className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100"
-                    >
-                      <option value="low">Low</option>
-                      <option value="normal">Normal</option>
-                      <option value="high">High</option>
-                      <option value="critical">Critical</option>
-                    </select>
-                  </div>
-                  <div>
-                    <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1.5">
-                      Supervisor Notes
-                    </label>
-                    <input
-                      type="text"
-                      value={verifyNotes}
-                      onChange={(e) => setVerifyNotes(e.target.value)}
-                      placeholder="e.g. Verified by phone call."
-                      className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500"
-                    />
-                  </div>
-                </div>
-
-                <div className="flex items-center gap-3 pt-2">
-                  <button
-                    onClick={handleVerify}
-                    className="flex-1 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold shadow-xs cursor-pointer flex items-center justify-center gap-2 transition-all"
-                  >
-                    <CheckCircle2 className="w-4 h-4" />
-                    <span>Verify Complaint for Cleaner Dispatch</span>
-                  </button>
-                  <button
-                    onClick={() => setActionTab('reject')}
-                    className="py-3 px-4 rounded-xl border border-rose-300 dark:border-rose-700 text-rose-700 dark:text-rose-300 hover:bg-rose-50 dark:hover:bg-rose-950/40 font-bold cursor-pointer transition-colors"
-                  >
-                    Reject
-                  </button>
-                </div>
-              </div>
-            )}
-
-            {/* ACTION: REJECT */}
-            {actionTab === 'reject' && (
-              <div className="space-y-4 text-xs">
-                <div className="p-4 rounded-2xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800 text-rose-900 dark:text-rose-200 space-y-1.5 shadow-2xs">
-                  <span className="font-bold block">Reject Complaint</span>
-                  <p className="leading-relaxed">
-                    Provide a clear, mandatory reason why this complaint cannot be verified (e.g. unreachable resident, duplicate report, private property).
-                  </p>
-                </div>
-
-                <div>
-                  <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1.5">
-                    Rejection Reason *
-                  </label>
-                  <textarea
-                    rows={3}
-                    value={rejectionReason}
-                    onChange={(e) => setRejectionReason(e.target.value)}
-                    placeholder="Enter rejection reason (minimum 5 characters)..."
-                    className="w-full p-3.5 rounded-xl border border-slate-300 dark:border-slate-700 text-xs bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 focus:ring-2 focus:ring-rose-500/20 focus:border-rose-500 transition-colors"
-                  />
-                  {rejectionError && <p className="text-rose-600 dark:text-rose-400 mt-1">{rejectionError}</p>}
-                </div>
-
-                <div className="flex items-center gap-3">
-                  <button
-                    onClick={handleReject}
-                    className="flex-1 py-3 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold shadow-xs cursor-pointer transition-colors"
-                  >
-                    Confirm Rejection
-                  </button>
-                  <button
-                    onClick={() => setActionTab('details')}
-                    className="py-3 px-4 rounded-xl border border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 font-semibold cursor-pointer transition-colors"
-                  >
-                    Cancel
-                  </button>
-                </div>
-              </div>
-            )}
-
-            {/* ACTION 2: ASSIGN CLEANER */}
-            {actionTab === 'assign' && (
-              <div className="space-y-4 text-xs">
-                <div className="p-3.5 rounded-2xl bg-blue-50 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-800 text-blue-900 dark:text-blue-200 shadow-2xs">
-                  <p>
-                    Complaint Locality: <span className="font-bold">{selectedComplaint.localityName}</span>.
-                    Only active cleaners authorized by supervisors for this locality are eligible for assignment.
-                  </p>
-                </div>
-
-                {eligibleCleaners.length === 0 ? (
-                  <div className="p-4 rounded-2xl bg-amber-50 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-800 text-amber-900 dark:text-amber-200 space-y-2 shadow-2xs">
-                    <div className="flex items-center gap-2 font-bold">
-                      <AlertTriangle className="w-4 h-4 text-amber-600 dark:text-amber-400" />
-                      <span>No Authorized Cleaners for {selectedComplaint.localityName}</span>
-                    </div>
-                    <p className="leading-relaxed">
-                      There are currently no active cleaners with approved service coverage in this locality.
-                      Go to the <span className="font-bold">Cleaner Applications</span> tab to approve cleaner locality coverage.
+                    <span className="text-[10px] text-slate-400 uppercase font-bold block">GPS COORDINATES</span>
+                    <p className="text-emerald-400 font-bold mt-0.5">
+                      {selectedComplaint.latitude.toFixed(6)}° N, {selectedComplaint.longitude.toFixed(6)}° E
                     </p>
                   </div>
-                ) : (
                   <div>
-                    <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1.5">
-                      Select Approved Cleaner *
-                    </label>
-                    <select
-                      value={selectedCleanerId}
-                      onChange={(e) => setSelectedCleanerId(e.target.value)}
-                      className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100"
+                    <span className="text-[10px] text-slate-400 uppercase font-bold block">RESIDENT CONTACT</span>
+                    <a
+                      href={`tel:${selectedComplaint.residentPhone}`}
+                      className="text-cyan-400 font-bold flex items-center gap-1 mt-0.5 hover:underline"
                     >
-                      <option value="">-- Choose an eligible cleaner --</option>
-                      {eligibleCleaners.map((cl) => (
-                        <option key={cl.id} value={cl.id}>
-                          {cl.fullName} {cl.supervisorId === currentUser.id ? '★ (My Team)' : ''} ({cl.email})
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                )}
-
-                <div>
-                  <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1.5">Dispatch Instructions</label>
-                  <input
-                    type="text"
-                    value={assignNotes}
-                    onChange={(e) => setAssignNotes(e.target.value)}
-                    placeholder="e.g. Priority corner near bus stop."
-                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500"
-                  />
-                </div>
-
-                {assignError && <p className="text-rose-600 dark:text-rose-400 text-xs">{assignError}</p>}
-
-                <button
-                  onClick={handleAssign}
-                  disabled={eligibleCleaners.length === 0}
-                  className="w-full py-3 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold shadow-xs cursor-pointer disabled:opacity-40 transition-colors"
-                >
-                  Assign Cleaner
-                </button>
-              </div>
-            )}
-
-            {/* ACTION 3: AUDIT COMPLETION PROOF */}
-            {actionTab === 'review' && (() => {
-              const initialPhoto = selectedComplaint.photos.find((p) => isInitialComplaintPhoto(p.photoType));
-              const completionPhoto = selectedComplaint.photos.find((p) => isCompletionComplaintPhoto(p.photoType));
-
-              return (
-                <div className="space-y-4 text-xs">
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    {/* Initial Photo */}
-                    <div className="border border-slate-200 dark:border-slate-800 rounded-2xl overflow-hidden bg-slate-50 dark:bg-slate-800/50 p-2.5 space-y-1.5 shadow-2xs">
-                      <div className="flex items-center justify-between">
-                        <span className="font-bold text-slate-800 dark:text-slate-200 block text-[11px]">
-                          1. Resident Initial Evidence
-                        </span>
-                        {initialPhoto && (
-                          <span className="text-[10px] text-slate-400 font-mono">
-                            {new Date(initialPhoto.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                          </span>
-                        )}
-                      </div>
-                      {initialPhoto ? (
-                        <SignedPhoto
-                          src={initialPhoto.url}
-                          storagePath={initialPhoto.storagePath}
-                          alt="Resident Initial Report Photo"
-                          className="w-full h-44 object-cover rounded-xl border border-slate-200 dark:border-slate-700"
-                        />
-                      ) : (
-                        <div className="h-44 flex flex-col items-center justify-center text-slate-400 bg-slate-100/50 dark:bg-slate-800/50 rounded-xl border border-dashed border-slate-200 dark:border-slate-700">
-                          <Eye className="w-6 h-6 mb-1 text-slate-300 dark:text-slate-600" />
-                          <span className="text-xs">No initial photo</span>
-                        </div>
-                      )}
-                    </div>
-
-                    {/* Cleaner After Photo */}
-                    <div className="border border-emerald-200 dark:border-emerald-800 rounded-2xl overflow-hidden bg-emerald-50/40 dark:bg-emerald-950/20 p-2.5 space-y-1.5 shadow-2xs">
-                      <div className="flex items-center justify-between">
-                        <span className="font-bold text-emerald-900 dark:text-emerald-300 block text-[11px]">
-                          2. Cleaner After-Cleaning Proof
-                        </span>
-                        {completionPhoto && (
-                          <span className="text-[10px] text-emerald-700 dark:text-emerald-400 font-mono">
-                            {new Date(completionPhoto.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                          </span>
-                        )}
-                      </div>
-                      {completionPhoto ? (
-                        <SignedPhoto
-                          src={completionPhoto.url}
-                          storagePath={completionPhoto.storagePath}
-                          alt="Cleaner After-Cleaning Completion Proof"
-                          className="w-full h-44 object-cover rounded-xl border border-emerald-300 dark:border-emerald-700 ring-1 ring-emerald-400"
-                        />
-                      ) : (
-                        <div className="h-44 flex flex-col items-center justify-center text-slate-400 bg-emerald-50/30 dark:bg-emerald-950/30 rounded-xl border border-dashed border-emerald-200 dark:border-emerald-800">
-                          <AlertTriangle className="w-6 h-6 mb-1 text-amber-500/70" />
-                          <span className="text-xs font-semibold">No completion photo</span>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* Supervisor Actions */}
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2">
-                    <div className="p-3.5 rounded-2xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 space-y-2.5 shadow-2xs">
-                      <span className="font-bold text-emerald-900 dark:text-emerald-200 block">Approve & Sign Off</span>
-                      <input
-                        type="text"
-                        value={approveNotes}
-                        onChange={(e) => setApproveNotes(e.target.value)}
-                        placeholder="Sign-off audit notes..."
-                        className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 text-xs focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500"
-                      />
-                      {approveError && (
-                        <p className="text-[11px] text-rose-600 dark:text-rose-400 font-medium">
-                          {approveError}
-                        </p>
-                      )}
-                      <button
-                        onClick={handleApproveCompletion}
-                        disabled={isApproving}
-                        className="w-full py-2.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white font-bold rounded-xl text-xs flex items-center justify-center gap-1.5 shadow-xs cursor-pointer transition-colors"
-                      >
-                        {isApproving ? (
-                          <>
-                            <RefreshCw className="w-4 h-4 animate-spin" />
-                            <span>Approving Completion...</span>
-                          </>
-                        ) : (
-                          <>
-                            <CheckCircle2 className="w-4 h-4" />
-                            <span>Approve Resolution</span>
-                          </>
-                        )}
-                      </button>
-                    </div>
-
-                    <div className="p-3.5 rounded-2xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800 space-y-2.5 shadow-2xs">
-                      <span className="font-bold text-rose-900 dark:text-rose-200 block">Return for Rework</span>
-                      <input
-                        type="text"
-                        value={returnNote}
-                        onChange={(e) => setReturnNote(e.target.value)}
-                        placeholder="Explanation for rework (min 5 chars)..."
-                        className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 text-xs focus:ring-2 focus:ring-rose-500/20 focus:border-rose-500"
-                      />
-                      {returnError && <p className="text-[11px] text-rose-600 dark:text-rose-400 font-medium">{returnError}</p>}
-                      <button
-                        onClick={handleReturnToProgress}
-                        disabled={isReturning}
-                        className="w-full py-2.5 bg-rose-600 hover:bg-rose-700 disabled:opacity-50 text-white font-bold rounded-xl text-xs flex items-center justify-center gap-1.5 shadow-xs cursor-pointer transition-colors"
-                      >
-                        {isReturning ? (
-                          <>
-                            <RefreshCw className="w-4 h-4 animate-spin" />
-                            <span>Returning to Cleaner...</span>
-                          </>
-                        ) : (
-                          <>
-                            <RotateCcw className="w-4 h-4" />
-                            <span>Return to Cleaner</span>
-                          </>
-                        )}
-                      </button>
-                    </div>
+                      <Phone className="w-3 h-3" />
+                      {selectedComplaint.residentPhone}
+                    </a>
                   </div>
                 </div>
-              );
-            })()}
 
-            {/* DETAILS & TIMELINE */}
-            {actionTab === 'details' && (
-              <div className="space-y-4 text-xs">
-                {/* Photo Gallery */}
+                {/* Evidence Photos */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  {selectedComplaint.photos.map((photo) => (
-                    <div key={photo.id} className="rounded-2xl overflow-hidden border border-slate-200 dark:border-slate-800 shadow-2xs">
+                  <div className="bg-[#0b0d10] rounded-xl border border-white/10 overflow-hidden">
+                    <span className="font-mono text-[10px] text-amber-400 p-2 block font-bold">
+                      01. INITIAL REPORT PHOTO
+                    </span>
+                    {selectedComplaint.photos.find((p) => isInitialComplaintPhoto(p.photoType)) ? (
                       <SignedPhoto
-                        src={photo.url}
-                        storagePath={photo.storagePath}
-                        alt={getComplaintPhotoLabel(photo.photoType)}
-                        className="w-full h-40 object-cover"
+                        storagePath={selectedComplaint.photos.find((p) => isInitialComplaintPhoto(p.photoType))!.storagePath}
+                        src={selectedComplaint.photos.find((p) => isInitialComplaintPhoto(p.photoType))!.url}
+                        alt="Initial photo"
+                        className="w-full h-44 object-cover"
                       />
-                      <div className="p-2.5 bg-slate-900 text-white text-[10px] flex justify-between">
-                        <span className="font-semibold capitalize">
-                          {getComplaintPhotoLabel(photo.photoType)}
-                        </span>
-                        <span className="font-mono tabular-nums text-slate-400">
-                          {new Date(photo.createdAt).toLocaleDateString()}
-                        </span>
+                    ) : (
+                      <div className="h-44 flex items-center justify-center text-xs text-slate-600 font-mono">
+                        NO PHOTO
                       </div>
-                    </div>
-                  ))}
+                    )}
+                  </div>
+
+                  <div className="bg-[#0b0d10] rounded-xl border border-white/10 overflow-hidden">
+                    <span className="font-mono text-[10px] text-emerald-400 p-2 block font-bold">
+                      02. CLEANER COMPLETION PHOTO
+                    </span>
+                    {selectedComplaint.photos.find((p) => isCompletionComplaintPhoto(p.photoType)) ? (
+                      <SignedPhoto
+                        storagePath={selectedComplaint.photos.find((p) => isCompletionComplaintPhoto(p.photoType))!.storagePath}
+                        src={selectedComplaint.photos.find((p) => isCompletionComplaintPhoto(p.photoType))!.url}
+                        alt="Completion photo"
+                        className="w-full h-44 object-cover"
+                      />
+                    ) : (
+                      <div className="h-44 flex flex-col items-center justify-center text-xs text-slate-600 font-mono p-4 text-center">
+                        <Clock className="w-5 h-5 text-slate-600 mb-1" />
+                        <span>AWAITING CLEANER RESOLUTION</span>
+                      </div>
+                    )}
+                  </div>
                 </div>
 
-                <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700/80 space-y-2 shadow-2xs">
-                  <div className="flex justify-between">
-                    <span className="text-slate-500 dark:text-slate-400">Waste Type:</span>
-                    <span className="font-semibold text-slate-800 dark:text-slate-200 capitalize">
-                      {selectedComplaint.wasteType.replace('_', ' ')}
-                    </span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-slate-500 dark:text-slate-400">GPS Coordinates:</span>
-                    <span className="font-mono tabular-nums text-slate-800 dark:text-slate-200">
-                      {selectedComplaint.latitude.toFixed(6)}, {selectedComplaint.longitude.toFixed(6)}
-                    </span>
-                  </div>
-                  {selectedComplaint.remark && (
-                    <div className="pt-2 border-t border-slate-200 dark:border-slate-700">
-                      <span className="text-slate-500 dark:text-slate-400 block font-semibold">Resident Remark:</span>
-                      <p className="text-slate-700 dark:text-slate-300 mt-0.5 leading-relaxed">{selectedComplaint.remark}</p>
-                    </div>
-                  )}
-                  {selectedComplaint.rejectionReason && (
-                    <div className="pt-2 border-t border-rose-200 dark:border-rose-800 text-rose-800 dark:text-rose-200">
-                      <span className="font-bold block">Rejection Reason:</span>
-                      <p className="mt-0.5 leading-relaxed">{selectedComplaint.rejectionReason}</p>
-                    </div>
-                  )}
-                  {(selectedComplaint.supervisorNote || selectedComplaint.supervisorNotes) && (
-                    <div className="pt-2 border-t border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-200">
-                      <span className="font-bold block text-slate-700 dark:text-slate-300">Supervisor Note:</span>
-                      <p className="mt-0.5 leading-relaxed">{selectedComplaint.supervisorNote || selectedComplaint.supervisorNotes}</p>
-                    </div>
-                  )}
-                </div>
-
-                {/* Audit Timeline */}
+                {/* Timeline */}
                 <ComplaintTimeline
                   currentStatus={selectedComplaint.status}
                   history={selectedComplaint.history}
                 />
               </div>
             )}
+
+            {/* VERIFY TAB */}
+            {modalTab === 'verify' && (
+              <form onSubmit={handleVerify} className="space-y-4">
+                <div className="p-3.5 rounded-2xl bg-amber-950/30 border border-amber-500/30 text-amber-300 text-xs flex items-start gap-2.5">
+                  <PhoneCall className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+                  <p className="leading-relaxed">
+                    Voice verification is mandatory before cleaner dispatch. Call{' '}
+                    <strong className="text-white">{selectedComplaint.residentPhone}</strong> to confirm the exact waste location and access instructions.
+                  </p>
+                </div>
+
+                {verifyError && (
+                  <div className="p-3 rounded-xl bg-rose-950/40 border border-rose-500/30 text-rose-300 text-xs flex items-center gap-2">
+                    <AlertCircle className="w-4 h-4 text-rose-400 shrink-0" />
+                    <span>{verifyError}</span>
+                  </div>
+                )}
+
+                <label className="p-3.5 rounded-xl border border-white/10 bg-[#12161c] flex items-center gap-3 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={phoneConfirmed}
+                    onChange={(e) => setPhoneConfirmed(e.target.checked)}
+                    className="w-4 h-4 rounded text-emerald-600 focus:ring-emerald-500 bg-[#0b0d10] border-white/20 cursor-pointer"
+                  />
+                  <div className="text-xs font-mono">
+                    <span className="font-bold text-white block">PHONE CALL VERIFIED WITH RESIDENT</span>
+                    <span className="text-slate-400 text-[11px]">Confirmed identity, address landmark, and current waste volume.</span>
+                  </div>
+                </label>
+
+                <div>
+                  <label className="block font-mono text-[10px] uppercase text-slate-400 mb-1">
+                    SET DISPATCH URGENCY
+                  </label>
+                  <div className="grid grid-cols-4 gap-2">
+                    {(['low', 'normal', 'high', 'critical'] as UrgencyLevel[]).map((u) => (
+                      <button
+                        key={u}
+                        type="button"
+                        onClick={() => setVerifyUrgency(u)}
+                        className={`p-2 rounded-xl border font-mono text-xs uppercase font-bold transition-all cursor-pointer ${
+                          verifyUrgency === u
+                            ? 'bg-amber-950/60 border-amber-500 text-amber-300 shadow-xs'
+                            : 'border-white/5 bg-[#0b0d10] text-slate-400'
+                        }`}
+                      >
+                        {u}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block font-mono text-[10px] uppercase text-slate-400 mb-1">
+                    SUPERVISOR VERIFICATION NOTE (OPTIONAL)
+                  </label>
+                  <textarea
+                    rows={2}
+                    value={verifyNotes}
+                    onChange={(e) => setVerifyNotes(e.target.value)}
+                    placeholder="Resident confirmed waste pile is adjacent to rear gate..."
+                    className="w-full px-3.5 py-2 rounded-xl border border-white/10 bg-[#0b0d10] text-white text-xs font-mono focus:border-amber-500/60 focus:outline-hidden"
+                  />
+                </div>
+
+                <button
+                  type="submit"
+                  disabled={isVerifying}
+                  className="w-full py-3 rounded-xl bg-amber-600 hover:bg-amber-500 disabled:opacity-50 text-white font-mono font-bold text-xs uppercase tracking-wider shadow-[0_0_15px_rgba(245,158,11,0.3)] transition-all cursor-pointer min-h-[44px]"
+                >
+                  {isVerifying ? 'VERIFYING...' : 'VERIFY & PROCEED TO CLEANER ASSIGNMENT'}
+                </button>
+              </form>
+            )}
+
+            {/* ASSIGN TAB */}
+            {modalTab === 'assign' && (
+              <form onSubmit={handleAssignCleaner} className="space-y-4">
+                <div className="p-3.5 rounded-2xl bg-cyan-950/30 border border-cyan-500/30 text-cyan-300 text-xs flex items-start gap-2.5">
+                  <HardHat className="w-4 h-4 text-cyan-400 shrink-0 mt-0.5" />
+                  <p className="leading-relaxed">
+                    Select an approved cleaner for{' '}
+                    <strong className="text-white">{selectedComplaint.localityName}</strong>. The complaint will immediately appear on the cleaner's task dashboard.
+                  </p>
+                </div>
+
+                {assignError && (
+                  <div className="p-3 rounded-xl bg-rose-950/40 border border-rose-500/30 text-rose-300 text-xs flex items-center gap-2">
+                    <AlertCircle className="w-4 h-4 text-rose-400 shrink-0" />
+                    <span>{assignError}</span>
+                  </div>
+                )}
+
+                <div>
+                  <label className="block font-mono text-[10px] uppercase text-slate-400 mb-1">
+                    SELECT APPROVED CLEANER ({eligibleCleaners.length} AVAILABLE)
+                  </label>
+                  <select
+                    value={selectedCleanerId}
+                    onChange={(e) => setSelectedCleanerId(e.target.value)}
+                    required
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-white/10 bg-[#0b0d10] text-white text-xs font-mono focus:border-cyan-500/60 focus:outline-hidden min-h-[44px] cursor-pointer"
+                  >
+                    <option value="">-- CHOOSE CLEANER --</option>
+                    {eligibleCleaners.map((cleaner) => {
+                      const activeCount = complaints.filter(
+                        (c) =>
+                          c.assignedCleanerId === cleaner.id &&
+                          (c.status === 'assigned' || c.status === 'in_progress')
+                      ).length;
+                      return (
+                        <option key={cleaner.id} value={cleaner.id} className="bg-[#0b0d10]">
+                          {cleaner.fullName} ({activeCount} active tasks)
+                        </option>
+                      );
+                    })}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block font-mono text-[10px] uppercase text-slate-400 mb-1">
+                    DISPATCH INSTRUCTIONS (OPTIONAL)
+                  </label>
+                  <textarea
+                    rows={2}
+                    value={assignNotes}
+                    onChange={(e) => setAssignNotes(e.target.value)}
+                    placeholder="Instructions for cleaner (e.g. bring heavy gloves, gate code 1234)..."
+                    className="w-full px-3.5 py-2 rounded-xl border border-white/10 bg-[#0b0d10] text-white text-xs font-mono focus:border-cyan-500/60 focus:outline-hidden"
+                  />
+                </div>
+
+                <button
+                  type="submit"
+                  disabled={isAssigning || !selectedCleanerId}
+                  className="w-full py-3 rounded-xl bg-cyan-600 hover:bg-cyan-500 disabled:opacity-40 text-white font-mono font-bold text-xs uppercase tracking-wider shadow-[0_0_15px_rgba(6,182,212,0.3)] transition-all cursor-pointer min-h-[44px]"
+                >
+                  {isAssigning ? 'DISPATCHING...' : 'DISPATCH CLEANER TO LOCATION'}
+                </button>
+              </form>
+            )}
+
+            {/* AUDIT RESOLUTION TAB */}
+            {modalTab === 'audit' && (
+              <div className="space-y-4">
+                <div className="p-3.5 rounded-2xl bg-purple-950/30 border border-purple-500/30 text-purple-300 text-xs flex items-start gap-2.5">
+                  <ShieldCheck className="w-4 h-4 text-purple-400 shrink-0 mt-0.5" />
+                  <p className="leading-relaxed">
+                    Compare resident initial photo with cleaner completion photo. Approving resolution permanently closes this complaint into the municipal audit archive.
+                  </p>
+                </div>
+
+                {approveError && (
+                  <div className="p-3 rounded-xl bg-rose-950/40 border border-rose-500/30 text-rose-300 text-xs flex items-center gap-2">
+                    <AlertCircle className="w-4 h-4 text-rose-400 shrink-0" />
+                    <span>{approveError}</span>
+                  </div>
+                )}
+
+                {/* Side-by-side evidence preview */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div className="bg-[#0b0d10] rounded-xl border border-white/10 overflow-hidden">
+                    <span className="font-mono text-[10px] text-amber-400 p-2 block font-bold">
+                      01. BEFORE (RESIDENT REPORT)
+                    </span>
+                    {selectedComplaint.photos.find((p) => isInitialComplaintPhoto(p.photoType)) ? (
+                      <SignedPhoto
+                        storagePath={selectedComplaint.photos.find((p) => isInitialComplaintPhoto(p.photoType))!.storagePath}
+                        src={selectedComplaint.photos.find((p) => isInitialComplaintPhoto(p.photoType))!.url}
+                        alt="Initial photo"
+                        className="w-full h-44 object-cover"
+                      />
+                    ) : (
+                      <div className="h-44 flex items-center justify-center text-xs text-slate-600 font-mono">
+                        NO INITIAL PHOTO
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="bg-[#0b0d10] rounded-xl border border-white/10 overflow-hidden">
+                    <span className="font-mono text-[10px] text-emerald-400 p-2 block font-bold">
+                      02. AFTER (CLEANER EVIDENCE)
+                    </span>
+                    {selectedComplaint.photos.find((p) => isCompletionComplaintPhoto(p.photoType)) ? (
+                      <SignedPhoto
+                        storagePath={selectedComplaint.photos.find((p) => isCompletionComplaintPhoto(p.photoType))!.storagePath}
+                        src={selectedComplaint.photos.find((p) => isCompletionComplaintPhoto(p.photoType))!.url}
+                        alt="Completion photo"
+                        className="w-full h-44 object-cover"
+                      />
+                    ) : (
+                      <div className="h-44 flex items-center justify-center text-xs text-slate-600 font-mono">
+                        NO COMPLETION PHOTO
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Approve Form */}
+                <div className="p-4 rounded-2xl bg-[#12161c] border border-emerald-500/30 space-y-3">
+                  <h4 className="font-mono text-xs font-bold text-emerald-400 uppercase">
+                    APPROVE COMPLETION & CLOSE COMPLAINT
+                  </h4>
+                  <input
+                    type="text"
+                    value={approveNotes}
+                    onChange={(e) => setApproveNotes(e.target.value)}
+                    placeholder="Audit note: Site inspected and verified clean..."
+                    className="w-full px-3.5 py-2 rounded-xl border border-white/10 bg-[#0b0d10] text-white text-xs font-mono focus:border-emerald-500/60 focus:outline-hidden"
+                  />
+                  <button
+                    type="button"
+                    onClick={handleApproveCompletion}
+                    disabled={isApproving}
+                    className="w-full py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white font-mono font-bold text-xs uppercase tracking-wider transition-all cursor-pointer min-h-[44px]"
+                  >
+                    {isApproving ? 'SIGNING OFF...' : 'APPROVE RESOLUTION (SIGN OFF)'}
+                  </button>
+                </div>
+
+                {/* Return for Rework Form */}
+                <form onSubmit={handleReturnToInProgress} className="p-4 rounded-2xl bg-[#12161c] border border-amber-500/30 space-y-3">
+                  <h4 className="font-mono text-xs font-bold text-amber-400 uppercase">
+                    REQUEST REWORK (RETURN TO CLEANER)
+                  </h4>
+                  {returnError && (
+                    <p className="text-xs text-rose-400 font-mono">{returnError}</p>
+                  )}
+                  <input
+                    type="text"
+                    required
+                    value={returnNote}
+                    onChange={(e) => setReturnNote(e.target.value)}
+                    placeholder="Specific rework reason (e.g. residual debris left on sidewalk)..."
+                    className="w-full px-3.5 py-2 rounded-xl border border-white/10 bg-[#0b0d10] text-white text-xs font-mono focus:border-amber-500/60 focus:outline-hidden"
+                  />
+                  <button
+                    type="submit"
+                    disabled={isReturning}
+                    className="w-full py-2.5 rounded-xl border border-amber-500/50 hover:bg-amber-950/40 text-amber-300 font-mono font-bold text-xs uppercase tracking-wider transition-all cursor-pointer min-h-[44px]"
+                  >
+                    {isReturning ? 'SENDING BACK...' : 'RETURN TO IN PROGRESS FOR REWORK'}
+                  </button>
+                </form>
+              </div>
+            )}
+
+            {/* REJECT TAB */}
+            {modalTab === 'reject' && (
+              <form onSubmit={handleReject} className="space-y-4">
+                <div className="p-3.5 rounded-2xl bg-rose-950/30 border border-rose-500/30 text-rose-300 text-xs flex items-start gap-2.5">
+                  <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0 mt-0.5" />
+                  <p className="leading-relaxed">
+                    Rejecting closes the complaint as non-actionable or invalid. The recorded rationale is permanently saved to the immutable audit timeline.
+                  </p>
+                </div>
+
+                {rejectionError && (
+                  <p className="text-xs text-rose-400 font-mono">{rejectionError}</p>
+                )}
+
+                <div>
+                  <label className="block font-mono text-[10px] uppercase text-slate-400 mb-1">
+                    MANDATORY REJECTION RATIONALE
+                  </label>
+                  <textarea
+                    rows={3}
+                    required
+                    value={rejectionReason}
+                    onChange={(e) => setRejectionReason(e.target.value)}
+                    placeholder="Reason for rejection (e.g. private property with restricted access, duplicate report, non-municipal waste)..."
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-white/10 bg-[#0b0d10] text-white text-xs font-mono focus:border-rose-500/60 focus:outline-hidden"
+                  />
+                </div>
+
+                <button
+                  type="submit"
+                  disabled={isRejecting}
+                  className="w-full py-3 rounded-xl bg-rose-600 hover:bg-rose-500 disabled:opacity-50 text-white font-mono font-bold text-xs uppercase tracking-wider shadow-[0_0_15px_rgba(244,63,94,0.3)] transition-all cursor-pointer min-h-[44px]"
+                >
+                  {isRejecting ? 'RECORDING REJECTION...' : 'CONFIRM COMPLAINT REJECTION'}
+                </button>
+              </form>
+            )}
+
+            <div className="pt-2 text-right border-t border-white/10">
+              <button
+                type="button"
+                onClick={() => setSelectedComplaint(null)}
+                className="px-5 py-2.5 rounded-xl bg-white/10 hover:bg-white/15 text-xs font-mono font-bold uppercase tracking-wider text-white transition-colors cursor-pointer min-h-[44px]"
+              >
+                CLOSE
+              </button>
+            </div>
           </div>
         </div>
       )}
+
+      {/* Confirmation Modal */}
+      <ConfirmModal
+        isOpen={confirmModal.isOpen}
+        title={confirmModal.title}
+        message={confirmModal.message}
+        onConfirm={confirmModal.onConfirm}
+        onCancel={() => setConfirmModal((prev) => ({ ...prev, isOpen: false }))}
+      />
     </div>
   );
 };

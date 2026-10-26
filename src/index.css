@@ -5,6 +5,11 @@
 @layer base {
   :root {
     color-scheme: dark;
+    --bg-main: #0b0d10;
+    --bg-card: #12161c;
+    --border-subtle: rgba(255, 255, 255, 0.08);
+    --accent-emerald: #10b981;
+    --accent-cyan: #06b6d4;
   }
   .dark {
     color-scheme: dark;
@@ -12,37 +17,53 @@
   
   html {
     scroll-behavior: smooth;
-    background-color: #020617;
-    color: #f8fafc;
+    background-color: #0b0d10;
+    color: #f3f4f6;
   }
 
   body {
-    background-color: #020617;
-    color: #f8fafc;
+    background-color: #0b0d10;
+    color: #f3f4f6;
     min-height: 100vh;
     font-feature-settings: "cv02", "cv03", "cv04", "cv11";
     font-family: 'Plus Jakarta Sans', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   }
+
+  /* Monospace typewriter font utility for headings and technical markers */
+  .font-mono-display {
+    font-family: 'Space Mono', 'IBM Plex Mono', monospace;
+  }
+
+  .font-mono-code {
+    font-family: 'IBM Plex Mono', 'Space Mono', monospace;
+  }
+}
+
+/* Subtle glow utilities */
+.glow-emerald {
+  box-shadow: 0 0 25px -5px rgba(16, 185, 129, 0.15);
+}
+
+.glow-cyan {
+  box-shadow: 0 0 25px -5px rgba(6, 182, 212, 0.15);
+}
+
+.glow-emerald-sm {
+  box-shadow: 0 0 12px -2px rgba(16, 185, 129, 0.2);
 }
 
 /* Custom scrollbar for data tables and dialogs */
 ::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+  width: 5px;
+  height: 5px;
 }
 ::-webkit-scrollbar-track {
   background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background: rgba(156, 163, 175, 0.4);
+  background: rgba(255, 255, 255, 0.15);
   border-radius: 9999px;
 }
-.dark ::-webkit-scrollbar-thumb {
-  background: rgba(75, 85, 99, 0.4);
-}
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(156, 163, 175, 0.7);
-}
-.dark ::-webkit-scrollbar-thumb:hover {
-  background: rgba(75, 85, 99, 0.7);
+  background: rgba(255, 255, 255, 0.3);
 }
