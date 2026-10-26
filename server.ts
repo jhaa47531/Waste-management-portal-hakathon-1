@@ -1461,6 +1461,133 @@ app.post('/api/admin/reset-cleaner-password', async (req: Request, res: Response
 });
 
 /**
+ * Public Localities Endpoint:
+ * Fetches all active municipal localities for public complaint reporting
+ * and cleaner application service area selection.
+ */
+app.get('/api/localities', async (_req: Request, res: Response) => {
+  try {
+    if (!supabaseAdmin) {
+      return res.status(503).json({ success: false, error: 'Database service unavailable.' });
+    }
+
+    const { data, error } = await supabaseAdmin
+      .from('localities')
+      .select('*')
+      .order('name');
+
+    if (error) {
+      return res.status(500).json({ success: false, error: error.message });
+    }
+
+    const activeLocalities = (data || [])
+      .map((l: any) => {
+        const isActive =
+          l.is_active !== undefined
+            ? Boolean(l.is_active)
+            : l.active !== undefined
+            ? Boolean(l.active)
+            : true;
+        return {
+          id: l.id,
+          name: l.name,
+          active: isActive,
+          isActive,
+        };
+      })
+      .filter((l) => l.active);
+
+    return res.json({ success: true, localities: activeLocalities });
+  } catch (err: any) {
+    return res.status(500).json({
+      success: false,
+      error: err.message || 'Server error fetching localities.',
+    });
+  }
+});
+
+/**
+ * Administrator Locality Creation Endpoint:
+ * Allows authorized administrators to create new municipal operational localities.
+ */
+app.post('/api/admin/localities', async (req: Request, res: Response) => {
+  const authCheck = await verifyAdminCaller(req.headers.authorization);
+  if (!authCheck.ok) {
+    return res.status(authCheck.status).json({ success: false, error: authCheck.error });
+  }
+
+  if (!supabaseAdmin) {
+    return res.status(503).json({ success: false, error: 'Database service unavailable.' });
+  }
+
+  const { name } = req.body || {};
+  const trimmedName = (name || '').trim();
+
+  if (trimmedName.length < 2) {
+    return res.status(400).json({
+      success: false,
+      error: 'Locality name must be at least 2 characters long.',
+    });
+  }
+
+  try {
+    // Attempt insert with is_active first (matching live schema), with fallback to active
+    let insertPayload: Record<string, any> = {
+      name: trimmedName,
+      is_active: true,
+    };
+
+    let { data, error } = await supabaseAdmin
+      .from('localities')
+      .insert(insertPayload)
+      .select('*')
+      .single();
+
+    if (error && (error.message?.includes('is_active') || error.code === 'PGRST204')) {
+      insertPayload = {
+        name: trimmedName,
+        active: true,
+      };
+      const retry = await supabaseAdmin
+        .from('localities')
+        .insert(insertPayload)
+        .select('*')
+        .single();
+      data = retry.data;
+      error = retry.error;
+    }
+
+    if (error) {
+      if (error.code === '23505' || error.message?.includes('duplicate') || error.message?.includes('unique')) {
+        return res.status(409).json({
+          success: false,
+          error: `A municipal locality named "${trimmedName}" already exists.`,
+        });
+      }
+      return res.status(500).json({ success: false, error: error.message });
+    }
+
+    const formatted = {
+      id: data.id,
+      name: data.name,
+      active: true,
+      isActive: true,
+    };
+
+    return res.json({
+      success: true,
+      locality: formatted,
+      message: `Municipal locality "${trimmedName}" successfully created.`,
+    });
+  } catch (err: any) {
+    return res.status(500).json({
+      success: false,
+      error: err.message || 'Server error creating locality.',
+    });
+  }
+});
+
+/**
  * Authenticated Cleaner Profile Endpoint:
  * Returns the cleaner's verified profile with supervisor name and authorized service areas with locality names.
  */

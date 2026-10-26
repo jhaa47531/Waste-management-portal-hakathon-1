@@ -12,8 +12,6 @@ import {
   CleanerServiceArea,
 } from '../types/index.ts';
 import { portalStore } from '../services/store.ts';
-import { ConfirmModal } from './ConfirmModal.tsx';
-import { StatusBadge, UrgencyBadge } from './StatusBadge.tsx';
 import {
   ShieldAlert,
   UserCheck,
@@ -34,13 +32,7 @@ import {
   Edit2,
   CheckSquare,
   Sparkles,
-  BarChart3,
-  TrendingUp,
-  Activity,
-  Layers,
-  Check,
-  Send,
-  Trash2,
+  Plus,
 } from 'lucide-react';
 
 interface AdminViewProps {
@@ -61,10 +53,12 @@ export const AdminView: React.FC<AdminViewProps> = ({
   serviceAreas = [],
 }) => {
   const [activeTab, setActiveTab] = useState<
-    'overview' | 'applications' | 'cleaners' | 'supervisors' | 'users' | 'localities' | 'audit'
-  >('overview');
+    'applications' | 'cleaners' | 'supervisors' | 'users' | 'localities' | 'audit'
+  >('applications');
 
+  // --------------------------------------------------------------------------
   // Supervisor Provisioning Form State
+  // --------------------------------------------------------------------------
   const [supFullName, setSupFullName] = useState('');
   const [supEmail, setSupEmail] = useState('');
   const [supPhone, setSupPhone] = useState('');
@@ -73,7 +67,9 @@ export const AdminView: React.FC<AdminViewProps> = ({
   const [provisionMsg, setProvisionMsg] = useState<{ text: string; error?: boolean } | null>(null);
   const [isProvisioning, setIsProvisioning] = useState(false);
 
+  // --------------------------------------------------------------------------
   // PATH B: Admin "Add Cleaner" Form State
+  // --------------------------------------------------------------------------
   const [isAddCleanerOpen, setIsAddCleanerOpen] = useState(false);
   const [cleanerFullName, setCleanerFullName] = useState('');
   const [cleanerEmail, setCleanerEmail] = useState('');
@@ -86,11 +82,15 @@ export const AdminView: React.FC<AdminViewProps> = ({
   const [addCleanerMsg, setAddCleanerMsg] = useState<{ text: string; error?: boolean } | null>(null);
   const [isCreatingCleaner, setIsCreatingCleaner] = useState(false);
 
-  // Cleaner Search & Filter
+  // --------------------------------------------------------------------------
+  // Cleaner Search & Filtering
+  // --------------------------------------------------------------------------
   const [cleanerSearch, setCleanerSearch] = useState('');
   const [cleanerStatusFilter, setCleanerStatusFilter] = useState<'all' | 'active' | 'pending' | 'suspended'>('all');
 
+  // --------------------------------------------------------------------------
   // Cleaner Application Review Modal State
+  // --------------------------------------------------------------------------
   const [selectedApp, setSelectedApp] = useState<CleanerApplication | null>(null);
   const [appSupervisorId, setAppSupervisorId] = useState('');
   const [appApprovedLocalityIds, setAppApprovedLocalityIds] = useState<string[]>([]);
@@ -98,44 +98,84 @@ export const AdminView: React.FC<AdminViewProps> = ({
   const [appReviewMsg, setAppReviewMsg] = useState<{ text: string; error?: boolean } | null>(null);
   const [isReviewingApp, setIsReviewingApp] = useState(false);
 
+  // --------------------------------------------------------------------------
+  // Reassign Supervisor Modal State
+  // --------------------------------------------------------------------------
+  const [reassignCleaner, setReassignCleaner] = useState<UserProfile | null>(null);
+  const [newSupervisorId, setNewSupervisorId] = useState('');
+  const [isUpdatingSupervisor, setIsUpdatingSupervisor] = useState(false);
+  const [reassignMsg, setReassignMsg] = useState<{ text: string; error?: boolean } | null>(null);
+
+  // --------------------------------------------------------------------------
+  // Edit Service Areas Modal State
+  // --------------------------------------------------------------------------
+  const [editAreasCleaner, setEditAreasCleaner] = useState<UserProfile | null>(null);
+  const [editLocalityIds, setEditLocalityIds] = useState<string[]>([]);
+  const [isUpdatingAreas, setIsUpdatingAreas] = useState(false);
+  const [editAreasMsg, setEditAreasMsg] = useState<{ text: string; error?: boolean } | null>(null);
+
+  // --------------------------------------------------------------------------
   // Unified Cleaner Assignment Modal State (Supervisor + Localities)
+  // --------------------------------------------------------------------------
   const [assignModalCleaner, setAssignModalCleaner] = useState<UserProfile | null>(null);
   const [assignModalSupervisorId, setAssignModalSupervisorId] = useState('');
   const [assignModalLocalityIds, setAssignModalLocalityIds] = useState<string[]>([]);
   const [isSavingUnifiedAssignment, setIsSavingUnifiedAssignment] = useState(false);
   const [assignModalMsg, setAssignModalMsg] = useState<{ text: string; error?: boolean } | null>(null);
 
+  // --------------------------------------------------------------------------
   // Reset Password Modal State
-  const [resetPwUser, setResetPwUser] = useState<UserProfile | null>(null);
-  const [newUserPw, setNewUserPw] = useState('');
+  // --------------------------------------------------------------------------
+  const [resetPwCleaner, setResetPwCleaner] = useState<UserProfile | null>(null);
+  const [newCleanerPw, setNewCleanerPw] = useState('');
   const [showResetPw, setShowResetPw] = useState(false);
   const [isResettingPw, setIsResettingPw] = useState(false);
   const [resetPwMsg, setResetPwMsg] = useState<{ text: string; error?: boolean } | null>(null);
 
-  // Destructive Confirm Modal
-  const [confirmModal, setConfirmModal] = useState<{
-    isOpen: boolean;
-    title: string;
-    message: string;
-    onConfirm: () => void;
-  }>({
-    isOpen: false,
-    title: '',
-    message: '',
-    onConfirm: () => {},
-  });
+  // --------------------------------------------------------------------------
+  // Locality Creation State
+  // --------------------------------------------------------------------------
+  const [newLocalityName, setNewLocalityName] = useState('');
+  const [isCreatingLocality, setIsCreatingLocality] = useState(false);
+  const [localityCreateMsg, setLocalityCreateMsg] = useState<{ text: string; error?: boolean } | null>(null);
+
+  const handleCreateLocality = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLocalityCreateMsg(null);
+    const trimmed = newLocalityName.trim();
+    if (trimmed.length < 2) {
+      setLocalityCreateMsg({ text: 'Locality name must be at least 2 characters long.', error: true });
+      return;
+    }
+
+    setIsCreatingLocality(true);
+    const res = await portalStore.createLocality(trimmed);
+    setIsCreatingLocality(false);
+
+    if (res.success) {
+      setNewLocalityName('');
+      setLocalityCreateMsg({
+        text: `Municipal locality "${trimmed}" successfully created.`,
+        error: false,
+      });
+    } else {
+      setLocalityCreateMsg({
+        text: res.error || 'Failed to create locality.',
+        error: true,
+      });
+    }
+  };
 
   // Derived user lists
   const supervisors = users.filter((u) => u.role === 'supervisor' && u.accountStatus === 'active');
   const allSupervisors = users.filter((u) => u.role === 'supervisor');
   const cleaners = users.filter((u) => u.role === 'cleaner');
-  const residents = users.filter((u) => u.role === 'resident');
 
   // Filtered cleaners
   const filteredCleaners = cleaners.filter((c) => {
     if (cleanerStatusFilter !== 'all' && c.accountStatus !== cleanerStatusFilter) return false;
     if (cleanerSearch.trim() !== '') {
-      const q = cleanerSearch.toLowerCase().trim();
+      const q = cleanerSearch.toLowerCase();
       const match =
         c.fullName.toLowerCase().includes(q) ||
         c.email.toLowerCase().includes(q) ||
@@ -145,110 +185,248 @@ export const AdminView: React.FC<AdminViewProps> = ({
     return true;
   });
 
-  // Overview metrics
-  const totalComplaints = complaints.length;
-  const resolvedComplaints = complaints.filter((c) => c.status === 'completed').length;
-  const resolutionRate = totalComplaints > 0 ? Math.round((resolvedComplaints / totalComplaints) * 100) : 0;
-  const activeDispatches = complaints.filter(
-    (c) => c.status === 'in_progress' || c.status === 'assigned'
-  ).length;
-  const pendingTriage = complaints.filter((c) => c.status === 'submitted').length;
-
-  // Waste category counts for SVG chart
-  const wasteCategoryCounts: Record<string, number> = {};
-  complaints.forEach((c) => {
-    wasteCategoryCounts[c.wasteType] = (wasteCategoryCounts[c.wasteType] || 0) + 1;
-  });
-
-  // Status breakdown
-  const statusCounts = {
-    submitted: complaints.filter((c) => c.status === 'submitted').length,
-    verified: complaints.filter((c) => c.status === 'verified').length,
-    assigned: complaints.filter((c) => c.status === 'assigned').length,
-    in_progress: complaints.filter((c) => c.status === 'in_progress').length,
-    awaiting_verification: complaints.filter((c) => c.status === 'awaiting_verification').length,
-    completed: complaints.filter((c) => c.status === 'completed').length,
-    rejected: complaints.filter((c) => c.status === 'rejected').length,
-  };
-
-  // Flattened audit logs from all complaints
-  const allAuditLogs = complaints
+  // System audit log: all complaint history entries flattened and sorted by date descending
+  const allAuditHistory = complaints
     .flatMap((c) =>
       c.history.map((h) => ({
         ...h,
         trackingCode: c.trackingCode,
-        complaintAddress: c.address,
+        address: c.address,
         localityName: c.localityName,
       }))
     )
     .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 
   // --------------------------------------------------------------------------
-  // Provision Supervisor Handler
+  // Handlers
   // --------------------------------------------------------------------------
+
+  // Provision Supervisor Handler
   const handleProvisionSupervisor = async (e: React.FormEvent) => {
     e.preventDefault();
     setProvisionMsg(null);
-    setIsProvisioning(true);
 
+    if (supFullName.trim().length < 2) {
+      setProvisionMsg({ text: 'Full name must be at least 2 characters.', error: true });
+      return;
+    }
+    if (supPhone.trim().length < 7) {
+      setProvisionMsg({ text: 'Phone number must be at least 7 characters.', error: true });
+      return;
+    }
+    if (!supPassword || supPassword.length < 8) {
+      setProvisionMsg({ text: 'Temporary password must be at least 8 characters long.', error: true });
+      return;
+    }
+
+    setIsProvisioning(true);
     const res = await portalStore.provisionSupervisor({
       email: supEmail,
       fullName: supFullName,
       phoneNumber: supPhone,
       password: supPassword,
     });
-
     setIsProvisioning(false);
 
     if (res.success) {
-      setProvisionMsg({ text: `Supervisor ${supFullName} provisioned successfully!` });
+      const supervisorName = res.user?.fullName || supFullName;
+      const supervisorEmail = res.user?.email || supEmail;
+      setProvisionMsg({
+        text: `Supervisor account for ${supervisorName} (${supervisorEmail}) successfully provisioned and activated.`,
+      });
       setSupFullName('');
       setSupEmail('');
       setSupPhone('');
       setSupPassword('');
+      setShowSupPassword(false);
+      setTimeout(() => setProvisionMsg(null), 8000);
     } else {
-      setProvisionMsg({ text: res.error || 'Failed to provision supervisor.', error: true });
+      setProvisionMsg({ text: res.error || 'Supervisor provisioning failed.', error: true });
     }
   };
 
-  // --------------------------------------------------------------------------
-  // Create Cleaner (Path B) Handler
-  // --------------------------------------------------------------------------
+  // PATH B: Create Cleaner Account Handler
   const handleCreateCleaner = async (e: React.FormEvent) => {
     e.preventDefault();
     setAddCleanerMsg(null);
-    setIsCreatingCleaner(true);
 
+    if (cleanerFullName.trim().length < 2) {
+      setAddCleanerMsg({ text: 'Full name must be at least 2 characters.', error: true });
+      return;
+    }
+    if (cleanerPhone.trim().length < 7) {
+      setAddCleanerMsg({ text: 'Phone number must be at least 7 characters.', error: true });
+      return;
+    }
+    if (cleanerPassword.length < 8) {
+      setAddCleanerMsg({ text: 'Initial password must be at least 8 characters long.', error: true });
+      return;
+    }
+    if (cleanerSelectedLocalityIds.length === 0) {
+      setAddCleanerMsg({ text: 'Please select at least 1 authorized service locality.', error: true });
+      return;
+    }
+
+    setIsCreatingCleaner(true);
     const res = await portalStore.createCleanerByAdmin({
       email: cleanerEmail,
       fullName: cleanerFullName,
       phoneNumber: cleanerPhone,
       password: cleanerPassword,
-      supervisorId: cleanerSupervisorId || undefined,
+      supervisorId: cleanerSupervisorId || null,
       localityIds: cleanerSelectedLocalityIds,
       accountStatus: cleanerAccountStatus,
     });
-
     setIsCreatingCleaner(false);
 
     if (res.success) {
-      setAddCleanerMsg({ text: `Cleaner ${cleanerFullName} created and configured!` });
+      setAddCleanerMsg({
+        text: `Cleaner account for ${cleanerFullName} (${cleanerEmail}) successfully created with credentials!`,
+      });
       setCleanerFullName('');
       setCleanerEmail('');
       setCleanerPhone('');
       setCleanerPassword('');
       setCleanerSupervisorId('');
       setCleanerSelectedLocalityIds([]);
-      setTimeout(() => setIsAddCleanerOpen(false), 1200);
+      setShowCleanerPassword(false);
+      setTimeout(() => {
+        setAddCleanerMsg(null);
+        setIsAddCleanerOpen(false);
+      }, 3000);
     } else {
-      setAddCleanerMsg({ text: res.error || 'Failed to create cleaner.', error: true });
+      setAddCleanerMsg({ text: res.error || 'Failed to create cleaner account.', error: true });
     }
   };
 
-  // --------------------------------------------------------------------------
-  // Open Unified Cleaner Assignment Modal
-  // --------------------------------------------------------------------------
-  const openUnifiedAssignment = (cleaner: UserProfile) => {
+  // Open Application Review Modal
+  const handleOpenReviewApp = (app: CleanerApplication) => {
+    setSelectedApp(app);
+    setAppSupervisorId(app.assignedSupervisorId || '');
+    const reqLocs = serviceAreas
+      .filter((sa) => sa.cleanerId === app.cleanerId)
+      .map((sa) => sa.localityId);
+    setAppApprovedLocalityIds(reqLocs.length > 0 ? reqLocs : localities.slice(0, 2).map((l) => l.id));
+    setAppNotes(app.reviewNotes || '');
+    setAppReviewMsg(null);
+  };
+
+  // Submit Application Review (Approve / Reject)
+  const handleSubmitAppReview = async (decision: 'approved' | 'rejected') => {
+    if (!selectedApp) return;
+    setAppReviewMsg(null);
+
+    if (decision === 'approved' && appApprovedLocalityIds.length === 0) {
+      setAppReviewMsg({
+        text: 'Please select at least 1 authorized service locality for approval.',
+        error: true,
+      });
+      return;
+    }
+
+    setIsReviewingApp(true);
+    const res = await portalStore.reviewCleanerApplication(
+      selectedApp.id,
+      decision,
+      decision === 'approved' ? appApprovedLocalityIds : [],
+      decision === 'approved' ? appSupervisorId || null : null,
+      appNotes
+    );
+    setIsReviewingApp(false);
+
+    if (res.success) {
+      setAppReviewMsg({
+        text: `Cleaner application successfully ${decision}.`,
+      });
+      setTimeout(() => {
+        setSelectedApp(null);
+        setAppReviewMsg(null);
+      }, 2000);
+    } else {
+      setAppReviewMsg({ text: res.error || 'Failed to process application review.', error: true });
+    }
+  };
+
+  // Toggle Locality in Add Cleaner form
+  const toggleAddCleanerLocality = (locId: string) => {
+    setCleanerSelectedLocalityIds((prev) =>
+      prev.includes(locId) ? prev.filter((id) => id !== locId) : [...prev, locId]
+    );
+  };
+
+  // Toggle Locality in Review form
+  const toggleReviewLocality = (locId: string) => {
+    setAppApprovedLocalityIds((prev) =>
+      prev.includes(locId) ? prev.filter((id) => id !== locId) : [...prev, locId]
+    );
+  };
+
+  // Reassign Supervisor Handler
+  const handleSaveReassign = async () => {
+    if (!reassignCleaner) return;
+    setIsUpdatingSupervisor(true);
+    setReassignMsg(null);
+
+    const res = await portalStore.updateCleaner({
+      cleanerId: reassignCleaner.id,
+      supervisorId: newSupervisorId || null,
+    });
+    setIsUpdatingSupervisor(false);
+
+    if (res.success) {
+      setReassignMsg({ text: 'Supervisor assigned successfully!' });
+      setTimeout(() => {
+        setReassignCleaner(null);
+        setReassignMsg(null);
+      }, 1500);
+    } else {
+      setReassignMsg({ text: res.error || 'Failed to assign supervisor.', error: true });
+    }
+  };
+
+  // Toggle Cleaner Account Status (Active <-> Suspended)
+  const handleToggleCleanerStatus = async (cleaner: UserProfile) => {
+    const nextStatus = cleaner.accountStatus === 'active' ? 'suspended' : 'active';
+    await portalStore.updateCleaner({
+      cleanerId: cleaner.id,
+      accountStatus: nextStatus,
+    });
+  };
+
+  // Edit Service Areas Handler
+  const handleOpenEditAreas = (cleaner: UserProfile) => {
+    setEditAreasCleaner(cleaner);
+    const existingIds = serviceAreas
+      .filter((sa) => sa.cleanerId === cleaner.id && sa.isApproved)
+      .map((sa) => sa.localityId);
+    setEditLocalityIds(existingIds);
+    setEditAreasMsg(null);
+  };
+
+  const handleSaveServiceAreas = async () => {
+    if (!editAreasCleaner) return;
+    setIsUpdatingAreas(true);
+    setEditAreasMsg(null);
+
+    const res = await portalStore.updateCleaner({
+      cleanerId: editAreasCleaner.id,
+      localityIds: editLocalityIds,
+    });
+    setIsUpdatingAreas(false);
+
+    if (res.success) {
+      setEditAreasMsg({ text: 'Authorized service areas updated successfully!' });
+      setTimeout(() => {
+        setEditAreasCleaner(null);
+        setEditAreasMsg(null);
+      }, 1500);
+    } else {
+      setEditAreasMsg({ text: res.error || 'Failed to update service areas.', error: true });
+    }
+  };
+
+  // Unified Cleaner Assignment Handler (Supervisor + Localities simultaneously)
+  const handleOpenAssignModal = (cleaner: UserProfile) => {
     setAssignModalCleaner(cleaner);
     setAssignModalSupervisorId(cleaner.supervisorId || '');
     const currentLocIds = serviceAreas
@@ -267,633 +445,620 @@ export const AdminView: React.FC<AdminViewProps> = ({
       cleanerId: assignModalCleaner.id,
       supervisorId: assignModalSupervisorId || null,
       localityIds: assignModalLocalityIds,
-      accountStatus: assignModalCleaner.accountStatus,
     });
-
     setIsSavingUnifiedAssignment(false);
 
     if (res.success) {
-      setAssignModalMsg({ text: 'Assignments updated successfully!' });
-      setTimeout(() => setAssignModalCleaner(null), 1000);
+      setAssignModalMsg({ text: 'Supervisor and service localities saved successfully!' });
+      setTimeout(() => {
+        setAssignModalCleaner(null);
+        setAssignModalMsg(null);
+      }, 1500);
     } else {
-      setAssignModalMsg({ text: res.error || 'Failed to update assignments.', error: true });
+      setAssignModalMsg({ text: res.error || 'Failed to update cleaner assignment.', error: true });
     }
   };
 
-  // --------------------------------------------------------------------------
-  // Reset Password Handler
-  // --------------------------------------------------------------------------
-  const handleResetPassword = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!resetPwUser || newUserPw.length < 6) return;
+  // Reset Cleaner Password Handler
+  const handleSaveResetPassword = async () => {
+    if (!resetPwCleaner) return;
+    if (newCleanerPw.length < 8) {
+      setResetPwMsg({ text: 'Password must be at least 8 characters long.', error: true });
+      return;
+    }
 
     setIsResettingPw(true);
     setResetPwMsg(null);
 
-    const res = await portalStore.resetCleanerPassword(resetPwUser.id, newUserPw);
+    const res = await portalStore.resetCleanerPassword(resetPwCleaner.id, newCleanerPw);
     setIsResettingPw(false);
 
     if (res.success) {
-      setResetPwMsg({ text: `Password updated for ${resetPwUser.fullName}` });
-      setTimeout(() => setResetPwUser(null), 1000);
+      setResetPwMsg({ text: 'Temporary password set successfully!' });
+      setTimeout(() => {
+        setResetPwCleaner(null);
+        setNewCleanerPw('');
+        setResetPwMsg(null);
+      }, 2000);
     } else {
       setResetPwMsg({ text: res.error || 'Failed to reset password.', error: true });
     }
   };
 
-  // --------------------------------------------------------------------------
-  // Review Application Handler
-  // --------------------------------------------------------------------------
-  const handleApproveApp = async (app: CleanerApplication) => {
-    setIsReviewingApp(true);
-    setAppReviewMsg(null);
-
-    const assignedLocalities =
-      appApprovedLocalityIds.length > 0 ? appApprovedLocalityIds : (app.preferredLocalityIds || []).slice(0, 3);
-
-    const res = await portalStore.reviewCleanerApplication(
-      app.id,
-      'approved',
-      assignedLocalities,
-      appSupervisorId || null,
-      appNotes || 'Approved by municipal administrator.'
-    );
-
-    setIsReviewingApp(false);
-
-    if (res.success) {
-      setAppReviewMsg({ text: `Application for ${app.cleanerName} approved.` });
-      setSelectedApp(null);
-    } else {
-      setAppReviewMsg({ text: res.error || 'Failed to approve application.', error: true });
-    }
-  };
-
-  const handleRejectApp = (app: CleanerApplication) => {
-    setConfirmModal({
-      isOpen: true,
-      title: 'REJECT CLEANER APPLICATION',
-      message: `Decline onboarding application for ${app.cleanerName}?`,
-      onConfirm: async () => {
-        const res = await portalStore.reviewCleanerApplication(
-          app.id,
-          'rejected',
-          [],
-          null,
-          appNotes || 'Declined by administrator.'
-        );
-        setConfirmModal((prev) => ({ ...prev, isOpen: false }));
-        setSelectedApp(null);
-        if (res.success) {
-          setAppReviewMsg({ text: `Application for ${app.cleanerName} rejected.` });
-        } else {
-          setAppReviewMsg({ text: res.error || 'Failed to reject application.', error: true });
-        }
-      },
-    });
-  };
+  const pendingAppsCount = cleanerApplications.filter((a) => a.status === 'pending').length;
 
   return (
-    <div className="space-y-6 text-slate-100">
-      {/* Admin Navigation Tabs */}
-      <div className="flex flex-wrap border-b border-white/[0.08] bg-[#12161c] rounded-2xl p-1.5 shadow-xs gap-1">
+    <div className="space-y-6">
+      {/* Admin Title Card */}
+      <div className="bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-2xl p-6 shadow-xs flex flex-col lg:flex-row items-start lg:items-center justify-between gap-6 transition-colors">
+        <div className="space-y-1.5">
+          <div className="flex items-center gap-2">
+            <span className="p-1.5 rounded-lg bg-purple-50 dark:bg-purple-950/60 text-purple-700 dark:text-purple-300 border border-purple-200/80 dark:border-purple-800/80">
+              <ShieldAlert className="w-4 h-4" />
+            </span>
+            <span className="text-[11px] uppercase tracking-wider font-bold text-purple-700 dark:text-purple-300">
+              Municipal Governance Console
+            </span>
+          </div>
+          <h2 className="text-xl sm:text-2xl font-bold text-slate-900 dark:text-white">
+            Administrator Administration & Governance
+          </h2>
+          <p className="text-xs text-slate-500 dark:text-slate-400">
+            Designated Administrator: <span className="font-semibold text-slate-700 dark:text-slate-200">{currentUser.email}</span>. Manage cleaner accounts, review applications, assign supervisors, and inspect audit records.
+          </p>
+        </div>
+
+        <div className="grid grid-cols-3 gap-2.5 sm:gap-3 w-full lg:w-auto shrink-0">
+          <div className="text-center px-3 sm:px-4 py-2.5 bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700/80 rounded-xl">
+            <span className="text-xl sm:text-2xl font-black text-slate-900 dark:text-white tabular-nums">{pendingAppsCount}</span>
+            <p className="text-[10px] uppercase font-bold text-slate-400 dark:text-slate-400 mt-0.5">Pending Apps</p>
+          </div>
+          <div className="text-center px-3 sm:px-4 py-2.5 bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700/80 rounded-xl">
+            <span className="text-xl sm:text-2xl font-black text-slate-900 dark:text-white tabular-nums">{cleaners.length}</span>
+            <p className="text-[10px] uppercase font-bold text-slate-400 dark:text-slate-400 mt-0.5">Cleaners</p>
+          </div>
+          <div className="text-center px-3 sm:px-4 py-2.5 bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700/80 rounded-xl">
+            <span className="text-xl sm:text-2xl font-black text-slate-900 dark:text-white tabular-nums">{supervisors.length}</span>
+            <p className="text-[10px] uppercase font-bold text-slate-400 dark:text-slate-400 mt-0.5">Supervisors</p>
+          </div>
+        </div>
+      </div>
+
+      {/* Tabs */}
+      <div className="flex border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 rounded-t-2xl px-4 pt-2 shadow-xs gap-1 overflow-x-auto transition-colors">
         <button
-          onClick={() => setActiveTab('overview')}
-          className={`py-2 px-3.5 text-xs font-mono font-bold uppercase tracking-wider rounded-xl transition-all flex items-center gap-1.5 cursor-pointer min-h-[44px] ${
-            activeTab === 'overview'
-              ? 'bg-cyan-950/70 text-cyan-300 border border-cyan-500/40 shadow-xs'
-              : 'text-slate-400 hover:text-white'
+          onClick={() => setActiveTab('applications')}
+          className={`py-3 px-4 text-xs font-bold border-b-2 transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
+            activeTab === 'applications'
+              ? 'border-purple-600 text-purple-800 dark:text-purple-300 dark:border-purple-400'
+              : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'
           }`}
         >
-          <BarChart3 className="w-3.5 h-3.5 text-cyan-400" />
-          <span>GOVERNANCE OVERVIEW</span>
+          <Clock className="w-3.5 h-3.5 text-amber-500" />
+          Cleaner Applications
+          {pendingAppsCount > 0 && (
+            <span className="ml-1 px-1.5 py-0.2 rounded-full text-[10px] font-bold bg-amber-100 dark:bg-amber-950/80 text-amber-900 dark:text-amber-200 border border-amber-300 dark:border-amber-700">
+              {pendingAppsCount}
+            </span>
+          )}
         </button>
 
         <button
           onClick={() => setActiveTab('cleaners')}
-          className={`py-2 px-3.5 text-xs font-mono font-bold uppercase tracking-wider rounded-xl transition-all flex items-center gap-1.5 cursor-pointer min-h-[44px] ${
+          className={`py-3 px-4 text-xs font-bold border-b-2 transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
             activeTab === 'cleaners'
-              ? 'bg-amber-950/70 text-amber-300 border border-amber-500/40 shadow-xs'
-              : 'text-slate-400 hover:text-white'
+              ? 'border-purple-600 text-purple-800 dark:text-purple-300 dark:border-purple-400'
+              : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'
           }`}
         >
-          <HardHat className="w-3.5 h-3.5 text-amber-400" />
-          <span>CLEANERS ({cleaners.length})</span>
-        </button>
-
-        <button
-          onClick={() => setActiveTab('applications')}
-          className={`py-2 px-3.5 text-xs font-mono font-bold uppercase tracking-wider rounded-xl transition-all flex items-center gap-1.5 cursor-pointer min-h-[44px] ${
-            activeTab === 'applications'
-              ? 'bg-emerald-950/70 text-emerald-300 border border-emerald-500/40 shadow-xs'
-              : 'text-slate-400 hover:text-white'
-          }`}
-        >
-          <UserPlus className="w-3.5 h-3.5 text-emerald-400" />
-          <span>APPLICATIONS ({cleanerApplications.filter((a) => a.status === 'pending').length})</span>
+          <HardHat className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
+          Cleaner Management ({cleaners.length})
         </button>
 
         <button
           onClick={() => setActiveTab('supervisors')}
-          className={`py-2 px-3.5 text-xs font-mono font-bold uppercase tracking-wider rounded-xl transition-all flex items-center gap-1.5 cursor-pointer min-h-[44px] ${
+          className={`py-3 px-4 text-xs font-bold border-b-2 transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
             activeTab === 'supervisors'
-              ? 'bg-blue-950/70 text-blue-300 border border-blue-500/40 shadow-xs'
-              : 'text-slate-400 hover:text-white'
+              ? 'border-purple-600 text-purple-800 dark:text-purple-300 dark:border-purple-400'
+              : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'
           }`}
         >
-          <UserCheck className="w-3.5 h-3.5 text-blue-400" />
-          <span>SUPERVISORS ({supervisors.length})</span>
+          <UserPlus className="w-3.5 h-3.5" />
+          Supervisor Provisioning ({supervisors.length})
         </button>
 
         <button
           onClick={() => setActiveTab('users')}
-          className={`py-2 px-3.5 text-xs font-mono font-bold uppercase tracking-wider rounded-xl transition-all flex items-center gap-1.5 cursor-pointer min-h-[44px] ${
+          className={`py-3 px-4 text-xs font-bold border-b-2 transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
             activeTab === 'users'
-              ? 'bg-purple-950/70 text-purple-300 border border-purple-500/40 shadow-xs'
-              : 'text-slate-400 hover:text-white'
+              ? 'border-purple-600 text-purple-800 dark:text-purple-300 dark:border-purple-400'
+              : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'
           }`}
         >
-          <Users className="w-3.5 h-3.5 text-purple-400" />
-          <span>USER REGISTRY ({users.length})</span>
+          <Users className="w-3.5 h-3.5" />
+          User Registry ({users.length})
         </button>
 
         <button
           onClick={() => setActiveTab('localities')}
-          className={`py-2 px-3.5 text-xs font-mono font-bold uppercase tracking-wider rounded-xl transition-all flex items-center gap-1.5 cursor-pointer min-h-[44px] ${
+          className={`py-3 px-4 text-xs font-bold border-b-2 transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
             activeTab === 'localities'
-              ? 'bg-white/10 text-white border border-white/20'
-              : 'text-slate-400 hover:text-white'
+              ? 'border-purple-600 text-purple-800 dark:text-purple-300 dark:border-purple-400'
+              : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'
           }`}
         >
-          <Building className="w-3.5 h-3.5 text-slate-300" />
-          <span>LOCALITIES ({localities.length})</span>
+          <Building className="w-3.5 h-3.5" />
+          Municipal Localities ({localities.length})
         </button>
 
         <button
           onClick={() => setActiveTab('audit')}
-          className={`py-2 px-3.5 text-xs font-mono font-bold uppercase tracking-wider rounded-xl transition-all flex items-center gap-1.5 cursor-pointer min-h-[44px] ${
+          className={`py-3 px-4 text-xs font-bold border-b-2 transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
             activeTab === 'audit'
-              ? 'bg-white/10 text-white border border-white/20'
-              : 'text-slate-400 hover:text-white'
+              ? 'border-purple-600 text-purple-800 dark:text-purple-300 dark:border-purple-400'
+              : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'
           }`}
         >
-          <History className="w-3.5 h-3.5 text-slate-300" />
-          <span>AUDIT LOG ({allAuditLogs.length})</span>
+          <History className="w-3.5 h-3.5" />
+          System Audit Trail ({allAuditHistory.length})
         </button>
       </div>
 
-      {/* =========================================================================
-          TAB 1: GOVERNANCE OVERVIEW (Visual Charts & Metrics)
-         ========================================================================= */}
-      {activeTab === 'overview' && (
-        <div className="space-y-6 animate-in fade-in duration-150">
-          {/* Top Key Metrics */}
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-            <div className="bg-[#12161c] p-4 rounded-2xl border border-white/[0.08] shadow-xs">
-              <span className="font-mono-display text-[10px] text-slate-400 uppercase tracking-wider block">
-                TOTAL REPORTS
-              </span>
-              <p className="text-3xl font-mono font-bold text-white mt-1">{totalComplaints}</p>
-              <span className="text-[10px] text-emerald-400 font-mono mt-1 block">Live Audit Registry</span>
-            </div>
-
-            <div className="bg-[#12161c] p-4 rounded-2xl border border-white/[0.08] shadow-xs">
-              <span className="font-mono-display text-[10px] text-slate-400 uppercase tracking-wider block">
-                RESOLUTION RATE
-              </span>
-              <p className="text-3xl font-mono font-bold text-emerald-400 mt-1">{resolutionRate}%</p>
-              <span className="text-[10px] text-slate-400 font-mono mt-1 block">Audited & Closed</span>
-            </div>
-
-            <div className="bg-[#12161c] p-4 rounded-2xl border border-white/[0.08] shadow-xs">
-              <span className="font-mono-display text-[10px] text-slate-400 uppercase tracking-wider block">
-                ACTIVE FIELD WORK
-              </span>
-              <p className="text-3xl font-mono font-bold text-cyan-400 mt-1">{activeDispatches}</p>
-              <span className="text-[10px] text-slate-400 font-mono mt-1 block">Assigned or In-Progress</span>
-            </div>
-
-            <div className="bg-[#12161c] p-4 rounded-2xl border border-white/[0.08] shadow-xs">
-              <span className="font-mono-display text-[10px] text-slate-400 uppercase tracking-wider block">
-                TRIAGE PENDING
-              </span>
-              <p className="text-3xl font-mono font-bold text-amber-400 mt-1">{pendingTriage}</p>
-              <span className="text-[10px] text-slate-400 font-mono mt-1 block">Requires Phone Verify</span>
+      {/* --------------------------------------------------------------------- */}
+      {/* TAB 1: CLEANER APPLICATIONS (Path A Review & Approval)               */}
+      {/* --------------------------------------------------------------------- */}
+      {activeTab === 'applications' && (
+        <div className="space-y-4">
+          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xs">
+            <div>
+              <h3 className="text-sm font-bold text-slate-900 dark:text-white">
+                Self-Registered Cleaner Applications (Path A)
+              </h3>
+              <p className="text-xs text-slate-500 dark:text-slate-400">
+                Review incoming cleaner submissions. Approving an application activates the cleaner account and binds them to an authorized Supervisor and service areas.
+              </p>
             </div>
           </div>
 
-          {/* SVG Visual Charts */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            {/* Status Breakdown Bar Chart */}
-            <div className="bg-[#12161c] rounded-3xl border border-white/[0.08] p-6 space-y-4 shadow-sm">
-              <div className="flex items-center justify-between border-b border-white/5 pb-3">
-                <div className="flex items-center gap-2">
-                  <Activity className="w-4 h-4 text-cyan-400" />
-                  <h3 className="font-mono-display uppercase tracking-wider text-xs font-bold text-white">
-                    RESOLUTION PIPELINE DISTRIBUTION
-                  </h3>
-                </div>
-                <span className="font-mono text-[10px] text-slate-400">{totalComplaints} TOTAL</span>
-              </div>
+          {cleanerApplications.length === 0 ? (
+            <div className="p-12 text-center bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800">
+              <Clock className="w-10 h-10 text-slate-300 dark:text-slate-600 mx-auto mb-2" />
+              <h4 className="font-bold text-slate-700 dark:text-slate-300 text-sm">No Cleaner Applications Submitted</h4>
+              <p className="text-xs text-slate-400 dark:text-slate-500 mt-1 max-w-md mx-auto">
+                Prospective cleaners who submit the self-registration form on the public portal will appear here for administrative verification and supervisor assignment.
+              </p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {cleanerApplications.map((app) => {
+                const reqServiceAreas = serviceAreas.filter((sa) => sa.cleanerId === app.cleanerId);
+                const isPending = app.status === 'pending';
 
-              <div className="space-y-3 pt-1">
-                {Object.entries(statusCounts).map(([statusKey, count]) => {
-                  const percent = totalComplaints > 0 ? Math.round((count / totalComplaints) * 100) : 0;
-                  const colorMap: Record<string, string> = {
-                    submitted: 'bg-amber-400',
-                    verified: 'bg-cyan-400',
-                    assigned: 'bg-indigo-400',
-                    in_progress: 'bg-purple-400',
-                    awaiting_verification: 'bg-orange-400',
-                    completed: 'bg-emerald-400',
-                    rejected: 'bg-rose-400',
-                  };
-                  const barColor = colorMap[statusKey] || 'bg-slate-400';
-
-                  return (
-                    <div key={statusKey} className="space-y-1">
-                      <div className="flex justify-between text-xs font-mono">
-                        <span className="uppercase text-slate-300">{statusKey.replace('_', ' ')}</span>
-                        <span className="text-slate-400">
-                          {count} ({percent}%)
+                return (
+                  <div
+                    key={app.id}
+                    className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-5 shadow-xs flex flex-col justify-between space-y-4 hover:border-slate-300 dark:hover:border-slate-700 transition-all"
+                  >
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between">
+                        <span
+                          className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider border ${
+                            app.status === 'approved'
+                              ? 'bg-emerald-50 dark:bg-emerald-950/50 text-emerald-800 dark:text-emerald-300 border-emerald-300 dark:border-emerald-800'
+                              : app.status === 'rejected'
+                              ? 'bg-rose-50 dark:bg-rose-950/50 text-rose-800 dark:text-rose-300 border-rose-300 dark:border-rose-800'
+                              : 'bg-amber-50 dark:bg-amber-950/50 text-amber-800 dark:text-amber-300 border-amber-300 dark:border-amber-800'
+                          }`}
+                        >
+                          {app.status}
+                        </span>
+                        <span className="text-[10px] text-slate-400 dark:text-slate-500">
+                          {new Date(app.createdAt).toLocaleDateString()}
                         </span>
                       </div>
-                      <div className="w-full h-2 rounded-full bg-[#0b0d10] overflow-hidden">
-                        <div
-                          className={`h-full rounded-full ${barColor} transition-all duration-500`}
-                          style={{ width: `${percent}%` }}
-                        />
+
+                      <div>
+                        <h4 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-1.5">
+                          <HardHat className="w-4 h-4 text-amber-600 dark:text-amber-400" />
+                          {app.cleanerName}
+                        </h4>
+                        <p className="text-xs text-slate-600 dark:text-slate-400 font-mono mt-0.5">{app.cleanerEmail}</p>
+                        {app.cleanerPhone && (
+                          <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">{app.cleanerPhone}</p>
+                        )}
+                      </div>
+
+                      {app.assignedSupervisorName && (
+                        <div className="p-2.5 rounded-xl bg-blue-50 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-900/60 text-blue-900 dark:text-blue-200 text-xs">
+                          <span className="font-bold block text-[10px] uppercase text-blue-700 dark:text-blue-400">
+                            Assigned Supervisor:
+                          </span>
+                          <span className="font-semibold">{app.assignedSupervisorName}</span>
+                        </div>
+                      )}
+
+                      {app.reviewNotes && (
+                        <div className="p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700/80 text-slate-700 dark:text-slate-300 text-xs">
+                          <span className="font-bold block text-[10px] uppercase text-slate-500 dark:text-slate-400">
+                            Review Notes:
+                          </span>
+                          <span className="italic">{app.reviewNotes}</span>
+                        </div>
+                      )}
+
+                      <div>
+                        <span className="text-[10px] uppercase tracking-wider font-bold text-slate-400 dark:text-slate-400 block mb-1">
+                          Requested Localities ({reqServiceAreas.length}):
+                        </span>
+                        <div className="flex flex-wrap gap-1">
+                          {reqServiceAreas.map((sa) => (
+                            <span
+                              key={sa.localityId}
+                              className={`px-2 py-0.5 rounded-md text-[10px] font-medium border ${
+                                sa.isApproved
+                                  ? 'bg-emerald-50 dark:bg-emerald-950/50 border-emerald-200 dark:border-emerald-800 text-emerald-800 dark:text-emerald-300'
+                                  : 'bg-slate-50 dark:bg-slate-800/80 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300'
+                              }`}
+                            >
+                              {sa.localityName} {sa.isApproved ? '✓' : ''}
+                            </span>
+                          ))}
+                        </div>
                       </div>
                     </div>
-                  );
-                })}
-              </div>
-            </div>
 
-            {/* Waste Categories Breakdown */}
-            <div className="bg-[#12161c] rounded-3xl border border-white/[0.08] p-6 space-y-4 shadow-sm">
-              <div className="flex items-center justify-between border-b border-white/5 pb-3">
-                <div className="flex items-center gap-2">
-                  <Layers className="w-4 h-4 text-emerald-400" />
-                  <h3 className="font-mono-display uppercase tracking-wider text-xs font-bold text-white">
-                    WASTE CATEGORY BREAKDOWN
-                  </h3>
-                </div>
-                <span className="font-mono text-[10px] text-slate-400">MUNICIPAL SECTORS</span>
-              </div>
-
-              <div className="grid grid-cols-2 gap-3 pt-2">
-                {Object.entries(wasteCategoryCounts).map(([type, count]) => (
-                  <div
-                    key={type}
-                    className="p-3.5 rounded-2xl bg-[#0b0d10] border border-white/5 flex items-center justify-between"
-                  >
-                    <div>
-                      <span className="font-mono text-xs uppercase text-white font-bold block">
-                        {type.replace('_', ' ')}
-                      </span>
-                      <span className="text-[10px] font-mono text-slate-400">
-                        {Math.round((count / (totalComplaints || 1)) * 100)}% of volume
-                      </span>
+                    <div className="pt-2 border-t border-slate-100 dark:border-slate-800 flex items-center gap-2">
+                      {isPending ? (
+                        <button
+                          onClick={() => handleOpenReviewApp(app)}
+                          className="w-full py-2 px-3 rounded-xl bg-purple-600 hover:bg-purple-700 text-white font-bold text-xs flex items-center justify-center gap-1.5 shadow-xs cursor-pointer transition-colors"
+                        >
+                          <CheckSquare className="w-3.5 h-3.5" />
+                          Review & Assign Supervisor
+                        </button>
+                      ) : (
+                        <button
+                          onClick={() => handleOpenReviewApp(app)}
+                          className="w-full py-2 px-3 rounded-xl border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 font-semibold text-xs flex items-center justify-center gap-1.5 cursor-pointer transition-colors"
+                        >
+                          <Edit2 className="w-3.5 h-3.5" />
+                          Update Review
+                        </button>
+                      )}
                     </div>
-                    <span className="text-lg font-mono font-bold text-emerald-400">{count}</span>
                   </div>
-                ))}
-              </div>
+                );
+              })}
             </div>
-          </div>
+          )}
         </div>
       )}
 
-      {/* =========================================================================
-          TAB 2: CLEANER MANAGEMENT (Roster + Path B Creation + Service Areas)
-         ========================================================================= */}
+      {/* --------------------------------------------------------------------- */}
+      {/* TAB 2: CLEANER MANAGEMENT (Path B Creation, Reassignment & Status)   */}
+      {/* --------------------------------------------------------------------- */}
       {activeTab === 'cleaners' && (
         <div className="space-y-4">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div className="bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xs flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
             <div>
-              <h3 className="font-mono-display text-sm uppercase tracking-wider font-bold text-white flex items-center gap-2">
-                <HardHat className="w-4 h-4 text-amber-400" />
-                <span>FIELD CLEANER DIRECTORY</span>
+              <h3 className="text-sm font-bold text-slate-900 dark:text-white">
+                Cleaner Accounts & Work Assignments
               </h3>
-              <p className="text-xs text-slate-400 mt-0.5">
-                Manage operational cleaners, assign supervisors, and authorize service sectors.
+              <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                Active municipal cleaners, their assigned Supervisor, authorized coverage zones, and operational task volume.
               </p>
             </div>
 
-            <button
-              onClick={() => setIsAddCleanerOpen(true)}
-              className="px-4 py-2.5 rounded-xl bg-amber-600 hover:bg-amber-500 text-white font-mono font-bold text-xs uppercase tracking-wider flex items-center gap-1.5 shadow-[0_0_15px_rgba(245,158,11,0.25)] transition-all cursor-pointer min-h-[44px]"
-            >
-              <UserPlus className="w-3.5 h-3.5" />
-              <span>ADD CLEANER (PATH B)</span>
-            </button>
+            <div className="flex items-center gap-2.5 w-full md:w-auto">
+              <button
+                onClick={() => setIsAddCleanerOpen(true)}
+                className="py-2.5 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs flex items-center gap-1.5 shadow-xs cursor-pointer transition-colors"
+              >
+                <UserPlus className="w-4 h-4" />
+                Add Cleaner Account (Direct)
+              </button>
+            </div>
           </div>
 
           {/* Search & Filter Bar */}
-          <div className="bg-[#12161c] p-3.5 rounded-2xl border border-white/[0.08] flex flex-wrap items-center justify-between gap-3 shadow-xs">
-            <div className="relative flex-1 min-w-[240px]">
-              <Search className="w-4 h-4 text-slate-500 absolute left-3.5 top-3" />
+          <div className="bg-white dark:bg-slate-900 p-3.5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xs flex flex-col sm:flex-row items-center gap-3">
+            <div className="relative flex-1 w-full">
+              <Search className="w-4 h-4 text-slate-400 dark:text-slate-500 absolute left-3 top-1/2 -translate-y-1/2" />
               <input
                 type="text"
                 value={cleanerSearch}
                 onChange={(e) => setCleanerSearch(e.target.value)}
                 placeholder="Search cleaners by name, email, or phone..."
-                className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-white/10 bg-[#0b0d10] text-white placeholder:text-slate-600 text-xs font-mono focus:border-amber-500/60 focus:outline-hidden min-h-[44px]"
+                className="w-full pl-9 pr-3 py-2 text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:bg-white dark:focus:bg-slate-800 focus:ring-2 focus:ring-purple-500 focus:outline-hidden"
               />
             </div>
 
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 w-full sm:w-auto">
+              <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">Status:</span>
               <select
                 value={cleanerStatusFilter}
                 onChange={(e) => setCleanerStatusFilter(e.target.value as any)}
-                className="px-3 py-2.5 rounded-xl border border-white/10 bg-[#0b0d10] text-slate-300 text-xs font-mono cursor-pointer focus:border-amber-500/60 focus:outline-hidden min-h-[44px]"
+                className="text-xs px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white focus:ring-2 focus:ring-purple-500"
               >
-                <option value="all">ALL ACCOUNT STATUSES</option>
-                <option value="active">ACTIVE</option>
-                <option value="pending">PENDING</option>
-                <option value="suspended">SUSPENDED</option>
+                <option value="all">All Accounts ({cleaners.length})</option>
+                <option value="active">Active ({cleaners.filter((c) => c.accountStatus === 'active').length})</option>
+                <option value="pending">Pending ({cleaners.filter((c) => c.accountStatus === 'pending').length})</option>
+                <option value="suspended">Suspended ({cleaners.filter((c) => c.accountStatus === 'suspended').length})</option>
               </select>
             </div>
           </div>
 
-          {/* Cleaners Table */}
-          <div className="bg-[#12161c] rounded-2xl border border-white/[0.08] overflow-hidden shadow-xs">
-            <div className="overflow-x-auto">
-              <table className="w-full text-left border-collapse text-xs">
-                <thead>
-                  <tr className="border-b border-white/[0.08] bg-[#0b0d10] text-slate-400 font-mono-display uppercase tracking-wider text-[10px]">
-                    <th className="py-3 px-4">CLEANER</th>
-                    <th className="py-3 px-4">ASSIGNED SUPERVISOR</th>
-                    <th className="py-3 px-4">AUTHORIZED LOCALITIES</th>
-                    <th className="py-3 px-4">STATUS</th>
-                    <th className="py-3 px-4 text-right">ACTIONS</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-white/5 font-mono">
-                  {filteredCleaners.map((cleaner) => {
-                    const sup = users.find((u) => u.id === cleaner.supervisorId);
-                    const cleanerAreas = serviceAreas.filter((sa) => sa.cleanerId === cleaner.id && sa.isApproved);
-
-                    return (
-                      <tr key={cleaner.id} className="hover:bg-white/[0.02] transition-colors">
-                        <td className="py-3 px-4">
-                          <span className="text-white block font-sans font-bold">{cleaner.fullName}</span>
-                          <span className="text-slate-500 text-[10px]">{cleaner.email} • {cleaner.phoneNumber}</span>
-                        </td>
-                        <td className="py-3 px-4">
-                          {sup ? (
-                            <span className="text-blue-400 font-medium">{sup.fullName}</span>
-                          ) : (
-                            <span className="text-slate-500">UNASSIGNED</span>
-                          )}
-                        </td>
-                        <td className="py-3 px-4">
-                          <span className="text-emerald-400 font-bold">{cleanerAreas.length} Localities</span>
-                        </td>
-                        <td className="py-3 px-4">
-                          <span
-                            className={`px-2 py-0.5 rounded-full text-[10px] uppercase font-bold ${
-                              cleaner.accountStatus === 'active'
-                                ? 'bg-emerald-950/60 text-emerald-300 border border-emerald-500/30'
-                                : cleaner.accountStatus === 'pending'
-                                ? 'bg-amber-950/60 text-amber-300 border border-amber-500/30'
-                                : 'bg-rose-950/60 text-rose-300 border border-rose-500/30'
-                            }`}
-                          >
-                            {cleaner.accountStatus}
-                          </span>
-                        </td>
-                        <td className="py-3 px-4 text-right space-x-2">
-                          <button
-                            onClick={() => openUnifiedAssignment(cleaner)}
-                            className="px-2.5 py-1.5 rounded-lg border border-white/10 hover:bg-white/5 text-slate-300 text-xs transition-colors cursor-pointer"
-                          >
-                            ASSIGN
-                          </button>
-                          <button
-                            onClick={() => {
-                              setResetPwUser(cleaner);
-                              setNewUserPw('');
-                              setResetPwMsg(null);
-                            }}
-                            className="px-2.5 py-1.5 rounded-lg border border-white/10 hover:bg-white/5 text-slate-300 text-xs transition-colors cursor-pointer"
-                            title="Reset password"
-                          >
-                            <KeyRound className="w-3.5 h-3.5 inline" />
-                          </button>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* =========================================================================
-          TAB 3: APPLICATIONS (Cleaner Applications)
-         ========================================================================= */}
-      {activeTab === 'applications' && (
-        <div className="space-y-4">
-          <div className="flex items-center justify-between px-1">
-            <div>
-              <h3 className="font-mono-display text-sm uppercase tracking-wider font-bold text-white flex items-center gap-2">
-                <UserPlus className="w-4 h-4 text-emerald-400" />
-                <span>CLEANER APPLICATIONS (PATH A)</span>
-              </h3>
-              <p className="text-xs text-slate-400 mt-0.5">
-                Review self-registered cleaner candidate submissions.
+          {filteredCleaners.length === 0 ? (
+            <div className="p-12 text-center bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800">
+              <HardHat className="w-10 h-10 text-slate-300 dark:text-slate-600 mx-auto mb-2" />
+              <h4 className="font-bold text-slate-700 dark:text-slate-300 text-sm">No Cleaner Accounts Match Filters</h4>
+              <p className="text-xs text-slate-400 dark:text-slate-500 mt-1">
+                Click &quot;Add Cleaner Account&quot; to provision a new cleaner directly, or clear your search criteria.
               </p>
             </div>
-          </div>
-
-          {appReviewMsg && (
-            <div
-              className={`p-3.5 rounded-xl border text-xs font-mono flex items-center justify-between ${
-                appReviewMsg.error
-                  ? 'bg-rose-950/40 border-rose-500/30 text-rose-300'
-                  : 'bg-emerald-950/40 border-emerald-500/30 text-emerald-300'
-              }`}
-            >
-              <span>{appReviewMsg.text}</span>
-              <button onClick={() => setAppReviewMsg(null)} className="p-1 cursor-pointer">
-                <X className="w-3.5 h-3.5" />
-              </button>
-            </div>
-          )}
-
-          {cleanerApplications.length === 0 ? (
-            <div className="p-12 text-center bg-[#12161c] rounded-3xl border border-white/[0.08] shadow-xs space-y-2">
-              <CheckCircle2 className="w-10 h-10 text-emerald-400 mx-auto" />
-              <h4 className="font-mono text-sm font-bold text-white">NO APPLICATIONS RECORDED</h4>
-              <p className="text-xs text-slate-400">Applications submitted from the registration modal will appear here.</p>
-            </div>
           ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {cleanerApplications.map((app) => (
-                <div
-                  key={app.id}
-                  className="bg-[#12161c] rounded-2xl border border-white/[0.08] p-5 space-y-3 shadow-xs"
-                >
-                  <div className="flex items-start justify-between">
-                    <div>
-                      <h4 className="text-base font-bold text-white font-sans">{app.cleanerName}</h4>
-                      <p className="text-xs text-slate-400 font-mono mt-0.5">
-                        {app.cleanerEmail} • {app.cleanerPhone || 'No phone'}
-                      </p>
-                      <span className="text-[10px] text-slate-500 font-mono block mt-1">
-                        APPLIED: {new Date(app.createdAt).toLocaleDateString()}
-                      </span>
-                    </div>
-                    <span
-                      className={`px-2 py-0.5 rounded-full text-[10px] font-mono uppercase font-bold ${
-                        app.status === 'approved'
-                          ? 'bg-emerald-950/60 text-emerald-300 border border-emerald-500/30'
-                          : app.status === 'rejected'
-                          ? 'bg-rose-950/60 text-rose-300 border border-rose-500/30'
-                          : 'bg-amber-950/60 text-amber-300 border border-amber-500/30'
-                      }`}
-                    >
-                      {app.status}
-                    </span>
-                  </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {filteredCleaners.map((cleaner) => {
+                const assignedSup = supervisors.find((s) => s.id === cleaner.supervisorId);
+                const approvedLocs = serviceAreas.filter((sa) => sa.cleanerId === cleaner.id && sa.isApproved);
+                const assignedTasks = complaints.filter((c) => c.assignedCleanerId === cleaner.id);
+                const completedTasks = assignedTasks.filter((c) => c.status === 'completed');
+                const inProgressTasks = assignedTasks.filter((c) => c.status === 'in_progress');
 
-                  <div className="space-y-1">
-                    <span className="text-[10px] font-mono text-slate-400 uppercase font-bold block">
-                      PREFERRED LOCALITIES ({(app.preferredLocalityIds || []).length}):
-                    </span>
-                    <div className="flex flex-wrap gap-1.5">
-                      {(app.preferredLocalityIds || []).map((id) => (
+                return (
+                  <div
+                    key={cleaner.id}
+                    className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-5 shadow-xs flex flex-col justify-between space-y-4 hover:border-slate-300 dark:hover:border-slate-700 transition-all"
+                  >
+                    <div className="space-y-3">
+                      <div className="flex items-start justify-between">
+                        <div>
+                          <div className="flex items-center gap-1.5">
+                            <span className="w-7 h-7 rounded-lg bg-amber-100 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300 border border-amber-200 dark:border-amber-800 flex items-center justify-center font-bold text-xs">
+                              {cleaner.fullName.charAt(0)}
+                            </span>
+                            <div>
+                              <h4 className="font-bold text-sm text-slate-900 dark:text-white">{cleaner.fullName}</h4>
+                              <p className="text-xs text-slate-500 dark:text-slate-400 font-mono">{cleaner.email}</p>
+                            </div>
+                          </div>
+                        </div>
+
                         <span
-                          key={id}
-                          className="px-2 py-0.5 rounded-lg bg-[#0b0d10] border border-white/5 text-[11px] font-mono text-slate-300"
+                          className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider border ${
+                            cleaner.accountStatus === 'active'
+                              ? 'bg-emerald-50 dark:bg-emerald-950/50 text-emerald-800 dark:text-emerald-300 border-emerald-300 dark:border-emerald-800'
+                              : cleaner.accountStatus === 'pending'
+                              ? 'bg-amber-50 dark:bg-amber-950/50 text-amber-800 dark:text-amber-300 border-amber-300 dark:border-amber-800'
+                              : 'bg-rose-50 dark:bg-rose-950/50 text-rose-800 dark:text-rose-300 border-rose-300 dark:border-rose-800'
+                          }`}
                         >
-                          {localities.find((l) => l.id === id)?.name || id}
+                          {cleaner.accountStatus}
                         </span>
-                      ))}
-                    </div>
-                  </div>
+                      </div>
 
-                  {app.status === 'pending' && (
-                    <div className="pt-2 border-t border-white/5 flex gap-2">
+                      <div className="text-xs text-slate-600 dark:text-slate-400">
+                        <span className="text-slate-400">Phone: </span>
+                        <span className="font-medium text-slate-700 dark:text-slate-300">{cleaner.phoneNumber}</span>
+                      </div>
+
+                      {/* Assigned Supervisor */}
+                      <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700/80 space-y-1.5 text-xs">
+                        <div className="flex items-center justify-between">
+                          <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                            Assigned Supervisor:
+                          </span>
+                          <button
+                            onClick={() => {
+                              setReassignCleaner(cleaner);
+                              setNewSupervisorId(cleaner.supervisorId || '');
+                              setReassignMsg(null);
+                            }}
+                            className="text-[10px] text-purple-700 dark:text-purple-400 hover:text-purple-900 dark:hover:text-purple-300 font-bold underline cursor-pointer"
+                          >
+                            Change
+                          </button>
+                        </div>
+                        {assignedSup || cleaner.supervisorName ? (
+                          <div className="flex items-center gap-1.5 font-bold text-slate-900 dark:text-white">
+                            <UserCheck className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
+                            <span>{assignedSup?.fullName || cleaner.supervisorName}</span>
+                          </div>
+                        ) : (
+                          <span className="text-amber-700 dark:text-amber-400 italic text-[11px] flex items-center gap-1">
+                            <AlertCircle className="w-3 h-3 text-amber-600 dark:text-amber-400" />
+                            No Supervisor Assigned
+                          </span>
+                        )}
+                      </div>
+
+                      {/* Authorized Service Areas */}
+                      <div className="space-y-1.5 text-xs">
+                        <div className="flex items-center justify-between">
+                          <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                            Authorized Localities ({approvedLocs.length}):
+                          </span>
+                          <button
+                            onClick={() => handleOpenEditAreas(cleaner)}
+                            className="text-[10px] text-purple-700 dark:text-purple-400 hover:text-purple-900 dark:hover:text-purple-300 font-bold underline cursor-pointer"
+                          >
+                            Edit
+                          </button>
+                        </div>
+                        <div className="flex flex-wrap gap-1">
+                          {approvedLocs.length > 0 ? (
+                            approvedLocs.map((sa) => (
+                              <span
+                                key={sa.localityId}
+                                className="px-2 py-0.5 rounded-md text-[10px] font-medium bg-emerald-50 dark:bg-emerald-950/50 border border-emerald-200 dark:border-emerald-800 text-emerald-800 dark:text-emerald-300"
+                              >
+                                {sa.localityName}
+                              </span>
+                            ))
+                          ) : (
+                            <span className="text-slate-400 dark:text-slate-500 italic text-[11px]">None authorized</span>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Work Assignment Stats */}
+                      <div className="grid grid-cols-3 gap-2 pt-2 border-t border-slate-100 dark:border-slate-800 text-center">
+                        <div className="p-1.5 bg-slate-50 dark:bg-slate-800/60 rounded-lg">
+                          <span className="text-xs font-bold text-slate-800 dark:text-slate-200 tabular-nums">{assignedTasks.length}</span>
+                          <p className="text-[9px] uppercase font-bold text-slate-400">Total</p>
+                        </div>
+                        <div className="p-1.5 bg-purple-50 dark:bg-purple-950/40 rounded-lg">
+                          <span className="text-xs font-bold text-purple-800 dark:text-purple-300 tabular-nums">{inProgressTasks.length}</span>
+                          <p className="text-[9px] uppercase font-bold text-purple-600 dark:text-purple-400">Active</p>
+                        </div>
+                        <div className="p-1.5 bg-emerald-50 dark:bg-emerald-950/40 rounded-lg">
+                          <span className="text-xs font-bold text-emerald-800 dark:text-emerald-300 tabular-nums">{completedTasks.length}</span>
+                          <p className="text-[9px] uppercase font-bold text-emerald-600 dark:text-emerald-400">Done</p>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Action Buttons */}
+                    <div className="pt-3 border-t border-slate-100 dark:border-slate-800 space-y-2">
+                      <button
+                        onClick={() => handleOpenAssignModal(cleaner)}
+                        className="w-full py-2 px-3 rounded-xl text-xs font-bold bg-purple-600 hover:bg-purple-700 text-white shadow-xs flex items-center justify-center gap-1.5 cursor-pointer transition-colors"
+                      >
+                        <CheckSquare className="w-3.5 h-3.5" />
+                        Assign Supervisor & Coverage Localities
+                      </button>
+
+                      <div className="flex items-center justify-between gap-2">
+                      <button
+                        onClick={() => handleToggleCleanerStatus(cleaner)}
+                        className={`flex-1 py-1.5 px-2.5 rounded-lg text-xs font-bold transition-colors cursor-pointer border ${
+                          cleaner.accountStatus === 'active'
+                            ? 'bg-rose-50 dark:bg-rose-950/40 text-rose-700 dark:text-rose-300 border-rose-200 dark:border-rose-900/60 hover:bg-rose-100 dark:hover:bg-rose-900/60'
+                            : 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-900/60 hover:bg-emerald-100 dark:hover:bg-emerald-900/60'
+                        }`}
+                      >
+                        {cleaner.accountStatus === 'active' ? 'Suspend Account' : 'Activate Account'}
+                      </button>
+
                       <button
                         onClick={() => {
-                          setSelectedApp(app);
-                          setAppSupervisorId(supervisors[0]?.id || '');
-                          setAppApprovedLocalityIds((app.preferredLocalityIds || []).slice(0, 3));
-                          setAppNotes('');
+                          setResetPwCleaner(cleaner);
+                          setNewCleanerPw('');
+                          setResetPwMsg(null);
                         }}
-                        className="flex-1 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-mono text-xs font-bold uppercase tracking-wider transition-all cursor-pointer min-h-[44px]"
+                        className="py-1.5 px-2.5 rounded-lg text-xs font-semibold border border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 flex items-center gap-1 cursor-pointer transition-colors"
+                        title="Set new initial temporary password"
                       >
-                        REVIEW & APPROVE
-                      </button>
-                      <button
-                        onClick={() => handleRejectApp(app)}
-                        className="py-2 px-3 rounded-xl border border-rose-500/30 hover:bg-rose-950 text-rose-300 font-mono text-xs uppercase cursor-pointer min-h-[44px]"
-                      >
-                        DECLINE
+                        <KeyRound className="w-3.5 h-3.5 text-slate-500 dark:text-slate-400" />
+                        Reset PW
                       </button>
                     </div>
-                  )}
+                  </div>
                 </div>
-              ))}
+              );
+              })}
             </div>
           )}
         </div>
       )}
 
-      {/* =========================================================================
-          TAB 4: SUPERVISOR PROVISIONING & ROSTER
-         ========================================================================= */}
+      {/* --------------------------------------------------------------------- */}
+      {/* TAB 3: SUPERVISOR PROVISIONING (Existing Feature Preserved)          */}
+      {/* --------------------------------------------------------------------- */}
       {activeTab === 'supervisors' && (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          {/* Provisioning Form */}
-          <div className="bg-[#12161c] rounded-3xl border border-white/[0.08] p-6 space-y-5 shadow-sm">
+          <div className="lg:col-span-1 bg-white dark:bg-slate-900 p-6 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xs space-y-4">
             <div>
-              <h3 className="font-mono-display uppercase tracking-wider text-sm font-bold text-white flex items-center gap-2">
-                <UserCheck className="w-4 h-4 text-blue-400" />
-                <span>PROVISION SUPERVISOR</span>
+              <h3 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                <UserPlus className="w-4 h-4 text-purple-600 dark:text-purple-400" /> Provision New Supervisor
               </h3>
-              <p className="text-xs text-slate-400 mt-1 leading-relaxed">
-                Supervisors conduct voice verification with residents and dispatch field cleaners. Public sign up is disabled.
+              <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                Grant elevated municipal supervisor permissions to authorized operational staff.
               </p>
             </div>
 
             {provisionMsg && (
               <div
-                className={`p-3.5 rounded-xl border text-xs font-mono ${
+                className={`p-3 rounded-xl border text-xs flex items-start gap-2 ${
                   provisionMsg.error
-                    ? 'bg-rose-950/40 border-rose-500/30 text-rose-300'
-                    : 'bg-emerald-950/40 border-emerald-500/30 text-emerald-300'
+                    ? 'bg-rose-50 dark:bg-rose-950/50 border-rose-300 dark:border-rose-800 text-rose-800 dark:text-rose-300'
+                    : 'bg-emerald-50 dark:bg-emerald-950/50 border-emerald-300 dark:border-emerald-800 text-emerald-800 dark:text-emerald-300'
                 }`}
               >
-                {provisionMsg.text}
+                {provisionMsg.error ? (
+                  <AlertCircle className="w-4 h-4 text-rose-600 dark:text-rose-400 shrink-0 mt-0.5" />
+                ) : (
+                  <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0 mt-0.5" />
+                )}
+                <span>{provisionMsg.text}</span>
               </div>
             )}
 
-            <form onSubmit={handleProvisionSupervisor} className="space-y-4">
+            <form onSubmit={handleProvisionSupervisor} className="space-y-3.5 text-xs">
               <div>
-                <label className="block font-mono text-[10px] uppercase text-slate-400 mb-1">
-                  FULL NAME
+                <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
+                  Supervisor Full Name *
                 </label>
                 <input
                   type="text"
                   required
                   value={supFullName}
                   onChange={(e) => setSupFullName(e.target.value)}
-                  placeholder="Supervisor Name"
-                  className="w-full px-3.5 py-2.5 rounded-xl border border-white/10 bg-[#0b0d10] text-white text-xs font-mono focus:border-blue-500/60 focus:outline-hidden"
+                  placeholder="e.g. Inspector Davis"
+                  className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white focus:ring-2 focus:ring-purple-500 focus:outline-hidden"
                 />
               </div>
 
               <div>
-                <label className="block font-mono text-[10px] uppercase text-slate-400 mb-1">
-                  OFFICIAL EMAIL
+                <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
+                  Official Email Address *
                 </label>
                 <input
                   type="email"
                   required
                   value={supEmail}
                   onChange={(e) => setSupEmail(e.target.value)}
-                  placeholder="supervisor@civicpickup.gov"
-                  className="w-full px-3.5 py-2.5 rounded-xl border border-white/10 bg-[#0b0d10] text-white text-xs font-mono focus:border-blue-500/60 focus:outline-hidden"
+                  placeholder="supervisor@civicwaste.org"
+                  className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white focus:ring-2 focus:ring-purple-500 focus:outline-hidden"
                 />
               </div>
 
               <div>
-                <label className="block font-mono text-[10px] uppercase text-slate-400 mb-1">
-                  PHONE NUMBER
+                <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
+                  Contact Phone Number *
                 </label>
                 <input
                   type="tel"
                   required
                   value={supPhone}
                   onChange={(e) => setSupPhone(e.target.value)}
-                  placeholder="+1-555-0100"
-                  className="w-full px-3.5 py-2.5 rounded-xl border border-white/10 bg-[#0b0d10] text-white text-xs font-mono focus:border-blue-500/60 focus:outline-hidden"
+                  placeholder="+1-555-0199"
+                  className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white focus:ring-2 focus:ring-purple-500 focus:outline-hidden"
                 />
               </div>
 
               <div>
-                <label className="block font-mono text-[10px] uppercase text-slate-400 mb-1">
-                  SECURE PASSWORD
-                </label>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="block font-bold text-slate-700 dark:text-slate-300">
+                    Temporary Initial Password *
+                  </label>
+                  <span className="text-[10px] text-slate-400">Min 8 chars</span>
+                </div>
                 <div className="relative">
                   <input
                     type={showSupPassword ? 'text' : 'password'}
                     required
+                    minLength={8}
                     value={supPassword}
                     onChange={(e) => setSupPassword(e.target.value)}
-                    placeholder="Minimum 6 characters"
-                    className="w-full px-3.5 py-2.5 rounded-xl border border-white/10 bg-[#0b0d10] text-white text-xs font-mono focus:border-blue-500/60 focus:outline-hidden"
+                    placeholder="Enter secure initial password"
+                    className="w-full px-3 py-2 pr-10 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white focus:ring-2 focus:ring-purple-500 focus:outline-hidden font-mono text-xs"
+                    autoComplete="new-password"
                   />
                   <button
                     type="button"
                     onClick={() => setShowSupPassword(!showSupPassword)}
-                    className="absolute right-3 top-2.5 text-slate-400 hover:text-white"
+                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 cursor-pointer p-0.5"
                   >
                     {showSupPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                   </button>
@@ -903,37 +1068,33 @@ export const AdminView: React.FC<AdminViewProps> = ({
               <button
                 type="submit"
                 disabled={isProvisioning}
-                className="w-full py-3 rounded-xl bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white font-mono font-bold text-xs uppercase tracking-wider shadow-[0_0_15px_rgba(59,130,246,0.3)] transition-all cursor-pointer min-h-[44px]"
+                className="w-full py-2.5 rounded-xl bg-purple-600 hover:bg-purple-700 text-white font-bold text-xs shadow-xs cursor-pointer disabled:opacity-40 transition-colors"
               >
-                {isProvisioning ? 'PROVISIONING...' : 'PROVISION SUPERVISOR'}
+                {isProvisioning ? 'Provisioning...' : 'Provision Supervisor'}
               </button>
             </form>
           </div>
 
-          {/* Supervisors Roster */}
           <div className="lg:col-span-2 space-y-4">
-            <h3 className="font-mono-display uppercase tracking-wider text-sm font-bold text-white">
-              ACTIVE SUPERVISORS ({supervisors.length})
+            <h3 className="text-sm font-bold text-slate-900 dark:text-white">
+              Active Municipal Supervisors ({supervisors.length})
             </h3>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               {allSupervisors.map((s) => {
-                const managedCleaners = cleaners.filter((c) => c.supervisorId === s.id);
+                const supervisedCleaners = cleaners.filter((c) => c.supervisorId === s.id);
                 return (
-                  <div
-                    key={s.id}
-                    className="bg-[#12161c] rounded-2xl border border-white/[0.08] p-5 space-y-3 shadow-xs"
-                  >
+                  <div key={s.id} className="p-4 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs space-y-2">
                     <div className="flex items-center justify-between">
-                      <h4 className="text-base font-bold text-white font-sans">{s.fullName}</h4>
-                      <span className="px-2 py-0.5 rounded-full text-[10px] font-mono uppercase bg-blue-950/60 text-blue-300 border border-blue-500/30">
-                        {s.accountStatus}
+                      <span className="font-bold text-sm text-slate-900 dark:text-white">{s.fullName}</span>
+                      <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-50 dark:bg-blue-950/50 text-blue-800 dark:text-blue-300 border border-blue-200 dark:border-blue-800">
+                        Supervisor
                       </span>
                     </div>
-
-                    <div className="p-2.5 rounded-xl bg-[#0b0d10] border border-white/5 space-y-1 text-xs font-mono text-slate-400">
-                      <div>EMAIL: <span className="text-white">{s.email}</span></div>
-                      <div>PHONE: <span className="text-white">{s.phoneNumber}</span></div>
-                      <div>ASSIGNED CLEANERS: <span className="text-cyan-400 font-bold">{managedCleaners.length}</span></div>
+                    <p className="text-xs text-slate-500 dark:text-slate-400 font-mono">{s.email}</p>
+                    <p className="text-xs text-slate-600 dark:text-slate-300">{s.phoneNumber}</p>
+                    <div className="pt-2 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between text-xs text-slate-500 dark:text-slate-400">
+                      <span>Assigned Cleaners:</span>
+                      <span className="font-bold text-slate-800 dark:text-slate-200 tabular-nums">{supervisedCleaners.length}</span>
                     </div>
                   </div>
                 );
@@ -943,155 +1104,203 @@ export const AdminView: React.FC<AdminViewProps> = ({
         </div>
       )}
 
-      {/* =========================================================================
-          TAB 5: USER REGISTRY (All 4 Roles)
-         ========================================================================= */}
+      {/* --------------------------------------------------------------------- */}
+      {/* TAB 4: USER REGISTRY (Existing Feature Preserved)                     */}
+      {/* --------------------------------------------------------------------- */}
       {activeTab === 'users' && (
-        <div className="space-y-4">
-          <div className="bg-[#12161c] rounded-2xl border border-white/[0.08] overflow-hidden shadow-xs">
-            <div className="overflow-x-auto">
-              <table className="w-full text-left border-collapse text-xs">
-                <thead>
-                  <tr className="border-b border-white/[0.08] bg-[#0b0d10] text-slate-400 font-mono-display uppercase tracking-wider text-[10px]">
-                    <th className="py-3 px-4">NAME & EMAIL</th>
-                    <th className="py-3 px-4">ROLE</th>
-                    <th className="py-3 px-4">PHONE</th>
-                    <th className="py-3 px-4">STATUS</th>
-                    <th className="py-3 px-4">JOINED</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-white/5 font-mono">
-                  {users.map((u) => (
-                    <tr key={u.id} className="hover:bg-white/[0.02] transition-colors">
+        <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xs overflow-hidden">
+          <div className="p-4 border-b border-slate-200 dark:border-slate-800">
+            <h3 className="text-sm font-bold text-slate-900 dark:text-white">Complete Municipal Accounts Registry</h3>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs text-left">
+              <thead className="bg-slate-50 dark:bg-slate-800/80 text-slate-500 dark:text-slate-400 border-b border-slate-200 dark:border-slate-800 uppercase tracking-wider font-bold text-[10px]">
+                <tr>
+                  <th className="py-3 px-4">Full Name</th>
+                  <th className="py-3 px-4">Email</th>
+                  <th className="py-3 px-4">Role</th>
+                  <th className="py-3 px-4">Status</th>
+                  <th className="py-3 px-4">Supervisor</th>
+                  <th className="py-3 px-4">Registered</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100 dark:divide-slate-800 text-slate-700 dark:text-slate-300">
+                {users.map((u) => {
+                  const sup = allSupervisors.find((s) => s.id === u.supervisorId);
+                  return (
+                    <tr key={u.id} className="hover:bg-slate-50/80 dark:hover:bg-slate-800/50 transition-colors">
+                      <td className="py-3 px-4 font-semibold text-slate-900 dark:text-white">{u.fullName}</td>
+                      <td className="py-3 px-4 font-mono text-slate-600 dark:text-slate-400">{u.email}</td>
                       <td className="py-3 px-4">
-                        <span className="text-white block font-sans font-bold">{u.fullName}</span>
-                        <span className="text-slate-500 text-[10px]">{u.email}</span>
+                        <span className="capitalize font-bold text-slate-800 dark:text-slate-200">{u.role}</span>
                       </td>
-                      <td className="py-3 px-4">
-                        <span className="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase bg-white/5 border border-white/10 text-slate-300">
-                          {u.role}
-                        </span>
-                      </td>
-                      <td className="py-3 px-4 text-slate-300">{u.phoneNumber}</td>
                       <td className="py-3 px-4">
                         <span
-                          className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase ${
+                          className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase border ${
                             u.accountStatus === 'active'
-                              ? 'bg-emerald-950/60 text-emerald-300 border border-emerald-500/30'
-                              : 'bg-amber-950/60 text-amber-300 border border-amber-500/30'
+                              ? 'bg-emerald-100 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-300 border-emerald-300 dark:border-emerald-800'
+                              : 'bg-rose-100 dark:bg-rose-950/60 text-rose-800 dark:text-rose-300 border-rose-300 dark:border-rose-800'
                           }`}
                         >
                           {u.accountStatus}
                         </span>
                       </td>
-                      <td className="py-3 px-4 text-slate-500 text-[10px]">
+                      <td className="py-3 px-4 text-slate-500 dark:text-slate-400">
+                        {sup?.fullName || u.supervisorName || '—'}
+                      </td>
+                      <td className="py-3 px-4 text-slate-400 dark:text-slate-500 tabular-nums">
                         {new Date(u.createdAt).toLocaleDateString()}
                       </td>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+                  );
+                })}
+              </tbody>
+            </table>
           </div>
         </div>
       )}
 
-      {/* =========================================================================
-          TAB 6: LOCALITIES (Municipal Wards)
-         ========================================================================= */}
+      {/* --------------------------------------------------------------------- */}
+      {/* TAB 5: MUNICIPAL LOCALITIES (Existing Feature Preserved + Creation)     */}
+      {/* --------------------------------------------------------------------- */}
       {activeTab === 'localities' && (
-        <div className="space-y-4">
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
-            {localities.map((loc) => {
-              const count = complaints.filter((c) => c.localityId === loc.id).length;
-              return (
-                <div
-                  key={loc.id}
-                  className="bg-[#12161c] rounded-2xl border border-white/[0.08] p-4 flex items-center justify-between shadow-xs"
-                >
-                  <div className="flex items-center gap-3">
-                    <Building className="w-5 h-5 text-emerald-400" />
-                    <div>
-                      <h4 className="font-bold text-sm text-white font-sans">{loc.name}</h4>
-                      <span className="font-mono text-[10px] text-slate-400">
-                        {count} TOTAL COMPLAINTS
-                      </span>
-                    </div>
-                  </div>
-                  <span className="px-2 py-0.5 rounded-full text-[10px] font-mono uppercase bg-emerald-950/60 text-emerald-300 border border-emerald-500/20">
-                    ACTIVE
-                  </span>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      )}
-
-      {/* =========================================================================
-          TAB 7: AUDIT LOG (Immutable History)
-         ========================================================================= */}
-      {activeTab === 'audit' && (
-        <div className="space-y-4">
-          <div className="bg-[#12161c] rounded-2xl border border-white/[0.08] overflow-hidden shadow-xs">
-            <div className="overflow-x-auto">
-              <table className="w-full text-left border-collapse text-xs">
-                <thead>
-                  <tr className="border-b border-white/[0.08] bg-[#0b0d10] text-slate-400 font-mono-display uppercase tracking-wider text-[10px]">
-                    <th className="py-3 px-4">TIMESTAMP</th>
-                    <th className="py-3 px-4">TRACKING ID</th>
-                    <th className="py-3 px-4">SECTOR</th>
-                    <th className="py-3 px-4">STATUS TRANSITION</th>
-                    <th className="py-3 px-4">ACTOR</th>
-                    <th className="py-3 px-4">NOTES</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-white/5 font-mono">
-                  {allAuditLogs.map((log, idx) => (
-                    <tr key={log.id || idx} className="hover:bg-white/[0.02] transition-colors">
-                      <td className="py-3 px-4 text-slate-500 text-[10px] whitespace-nowrap">
-                        {new Date(log.createdAt).toLocaleString()}
-                      </td>
-                      <td className="py-3 px-4 text-emerald-400 font-bold whitespace-nowrap">
-                        {log.trackingCode}
-                      </td>
-                      <td className="py-3 px-4 text-slate-300 whitespace-nowrap">{log.localityName}</td>
-                      <td className="py-3 px-4">
-                        <StatusBadge status={log.newStatus} size="sm" />
-                      </td>
-                      <td className="py-3 px-4 text-slate-300 whitespace-nowrap">
-                        {log.actorName} ({log.actorRole.toUpperCase()})
-                      </td>
-                      <td className="py-3 px-4 text-slate-400 max-w-xs truncate">
-                        {log.note || '—'}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+        <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xs p-6 space-y-6">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-slate-100 dark:border-slate-800">
+            <div>
+              <h3 className="text-sm font-bold text-slate-900 dark:text-white">Controlled Municipal Localities</h3>
+              <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                Official operational boundaries for resident complaints and cleaner service authorizations.
+              </p>
             </div>
+            <span className="text-xs font-semibold px-3 py-1 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 w-fit">
+              Total Active: {localities.filter((l) => l.active).length}
+            </span>
+          </div>
+
+          {/* Add Locality Form for Administrator */}
+          <form onSubmit={handleCreateLocality} className="p-4 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-800/40 space-y-3">
+            <div className="flex items-center gap-2">
+              <Plus className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+              <h4 className="text-xs font-bold text-slate-800 dark:text-slate-200">
+                Create New Municipal Locality
+              </h4>
+            </div>
+            <div className="flex flex-col sm:flex-row gap-2.5">
+              <input
+                type="text"
+                value={newLocalityName}
+                onChange={(e) => setNewLocalityName(e.target.value)}
+                placeholder="e.g. West Ward - Sector 7"
+                className="flex-1 px-3.5 py-2 text-xs rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 focus:outline-hidden focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500"
+              />
+              <button
+                type="submit"
+                disabled={isCreatingLocality || !newLocalityName.trim()}
+                className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white font-bold rounded-xl text-xs flex items-center justify-center gap-1.5 shadow-xs transition-colors cursor-pointer"
+              >
+                {isCreatingLocality ? (
+                  <>
+                    <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                    <span>Creating...</span>
+                  </>
+                ) : (
+                  <>
+                    <Plus className="w-3.5 h-3.5" />
+                    <span>Add Locality</span>
+                  </>
+                )}
+              </button>
+            </div>
+
+            {localityCreateMsg && (
+              <div
+                className={`p-2.5 rounded-lg text-xs flex items-center gap-2 ${
+                  localityCreateMsg.error
+                    ? 'bg-rose-50 dark:bg-rose-950/40 text-rose-800 dark:text-rose-300 border border-rose-200 dark:border-rose-800'
+                    : 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-800 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800'
+                }`}
+              >
+                {localityCreateMsg.error ? (
+                  <AlertCircle className="w-4 h-4 shrink-0 text-rose-600" />
+                ) : (
+                  <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-600" />
+                )}
+                <span>{localityCreateMsg.text}</span>
+              </div>
+            )}
+          </form>
+
+          {/* Localities Grid / Empty State */}
+          {localities.length === 0 ? (
+            <div className="p-8 text-center rounded-2xl border border-dashed border-slate-200 dark:border-slate-800 space-y-2">
+              <MapPin className="w-8 h-8 text-slate-400 mx-auto" />
+              <p className="text-xs font-bold text-slate-700 dark:text-slate-300">
+                No municipal localities have been defined yet.
+              </p>
+              <p className="text-[11px] text-slate-500 dark:text-slate-400 max-w-sm mx-auto">
+                Use the form above to add initial service zones so cleaners can select their preferred service wards.
+              </p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3">
+              {localities.map((loc) => {
+                const activeCount = complaints.filter((c) => c.localityId === loc.id).length;
+                return (
+                  <div key={loc.id} className="p-3.5 rounded-xl border border-slate-200 dark:border-slate-700/80 bg-slate-50/60 dark:bg-slate-800/50 space-y-1">
+                    <span className="font-bold text-xs text-slate-900 dark:text-white flex items-center gap-1.5">
+                      <MapPin className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                      {loc.name}
+                    </span>
+                    <p className="text-[11px] text-slate-500 dark:text-slate-400">Total Requests: <span className="font-semibold text-slate-700 dark:text-slate-300 tabular-nums">{activeCount}</span></p>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* --------------------------------------------------------------------- */}
+      {/* TAB 6: AUDIT TRAIL (Existing Feature Preserved)                       */}
+      {/* --------------------------------------------------------------------- */}
+      {activeTab === 'audit' && (
+        <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xs p-6 space-y-4">
+          <h3 className="text-sm font-bold text-slate-900 dark:text-white">Immutable Municipal Audit Trail</h3>
+          <div className="space-y-3">
+            {allAuditHistory.slice(0, 30).map((h) => (
+              <div key={h.id} className="p-3 rounded-xl border border-slate-200 dark:border-slate-700/80 bg-slate-50/50 dark:bg-slate-800/40 text-xs flex justify-between items-center">
+                <div>
+                  <span className="font-mono font-bold text-slate-900 dark:text-white mr-2">{h.trackingCode}</span>
+                  <span className="text-slate-600 dark:text-slate-300">{h.note || 'Status updated'}</span>
+                </div>
+                <span className="text-[10px] text-slate-400 dark:text-slate-500 tabular-nums">
+                  {new Date(h.createdAt).toLocaleString()}
+                </span>
+              </div>
+            ))}
           </div>
         </div>
       )}
 
-      {/* =========================================================================
-          MODAL: ADD CLEANER (PATH B)
-         ========================================================================= */}
+      {/* --------------------------------------------------------------------- */}
+      {/* MODAL 1: PATH B — ADMIN ADD CLEANER                                  */}
+      {/* --------------------------------------------------------------------- */}
       {isAddCleanerOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-xs overflow-y-auto animate-in fade-in duration-150">
-          <div className="bg-[#0f1217] border border-white/10 rounded-3xl w-full max-w-lg p-6 sm:p-7 shadow-2xl space-y-5 my-8 text-slate-100">
-            <div className="flex items-start justify-between border-b border-white/10 pb-4">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-xs overflow-y-auto">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl w-full max-w-lg p-6 shadow-2xl space-y-4 my-8">
+            <div className="flex items-start justify-between">
               <div>
-                <span className="font-mono text-[10px] text-amber-400 uppercase font-bold">
-                  ADMINISTRATIVE PROVISIONING
-                </span>
-                <h3 className="text-lg font-mono font-bold uppercase text-white mt-0.5">
-                  CREATE CLEANER ACCOUNT (PATH B)
+                <h3 className="text-base font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                  <UserPlus className="w-5 h-5 text-emerald-600 dark:text-emerald-400" />
+                  Add Cleaner Account Directly (Path B)
                 </h3>
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                  Provision a verified cleaner account without requiring self-registration.
+                </p>
               </div>
               <button
                 onClick={() => setIsAddCleanerOpen(false)}
-                className="p-1.5 rounded-xl text-slate-400 hover:text-white hover:bg-white/5 cursor-pointer"
+                className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 p-1 cursor-pointer"
               >
                 <X className="w-5 h-5" />
               </button>
@@ -1099,94 +1308,322 @@ export const AdminView: React.FC<AdminViewProps> = ({
 
             {addCleanerMsg && (
               <div
-                className={`p-3.5 rounded-xl border text-xs font-mono ${
+                className={`p-3 rounded-xl text-xs flex items-center gap-2 ${
                   addCleanerMsg.error
-                    ? 'bg-rose-950/40 border-rose-500/30 text-rose-300'
-                    : 'bg-emerald-950/40 border-emerald-500/30 text-emerald-300'
+                    ? 'bg-rose-50 dark:bg-rose-950/50 border border-rose-200 dark:border-rose-800 text-rose-800 dark:text-rose-300'
+                    : 'bg-emerald-50 dark:bg-emerald-950/50 border border-emerald-200 dark:border-emerald-800 text-emerald-800 dark:text-emerald-300'
                 }`}
               >
-                {addCleanerMsg.text}
+                {addCleanerMsg.error ? <AlertCircle className="w-4 h-4 shrink-0" /> : <CheckCircle2 className="w-4 h-4 shrink-0" />}
+                <span>{addCleanerMsg.text}</span>
               </div>
             )}
 
-            <form onSubmit={handleCreateCleaner} className="space-y-4">
+            <form onSubmit={handleCreateCleaner} className="space-y-3.5 text-xs">
               <div>
-                <label className="block font-mono text-[10px] uppercase text-slate-400 mb-1">
-                  FULL NAME
-                </label>
+                <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">Full Name *</label>
                 <input
                   type="text"
                   required
                   value={cleanerFullName}
                   onChange={(e) => setCleanerFullName(e.target.value)}
-                  placeholder="Cleaner Name"
-                  className="w-full px-3.5 py-2.5 rounded-xl border border-white/10 bg-[#0b0d10] text-white text-xs font-mono focus:border-amber-500/60 focus:outline-hidden"
+                  placeholder="e.g. Marcus Vance"
+                  className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white focus:ring-2 focus:ring-purple-500 focus:outline-hidden"
                 />
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block font-mono text-[10px] uppercase text-slate-400 mb-1">
-                    EMAIL
-                  </label>
+                  <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">Email / Login ID *</label>
                   <input
                     type="email"
                     required
                     value={cleanerEmail}
                     onChange={(e) => setCleanerEmail(e.target.value)}
-                    placeholder="cleaner@example.com"
-                    className="w-full px-3.5 py-2.5 rounded-xl border border-white/10 bg-[#0b0d10] text-white text-xs font-mono focus:border-amber-500/60 focus:outline-hidden"
+                    placeholder="cleaner@civicwaste.org"
+                    className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white focus:ring-2 focus:ring-purple-500 focus:outline-hidden"
                   />
                 </div>
-
                 <div>
-                  <label className="block font-mono text-[10px] uppercase text-slate-400 mb-1">
-                    PHONE
-                  </label>
+                  <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">Phone Number *</label>
                   <input
                     type="tel"
                     required
                     value={cleanerPhone}
                     onChange={(e) => setCleanerPhone(e.target.value)}
-                    placeholder="+1-555-0100"
-                    className="w-full px-3.5 py-2.5 rounded-xl border border-white/10 bg-[#0b0d10] text-white text-xs font-mono focus:border-amber-500/60 focus:outline-hidden"
+                    placeholder="+1-555-0144"
+                    className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white focus:ring-2 focus:ring-purple-500 focus:outline-hidden"
                   />
                 </div>
               </div>
 
               <div>
-                <label className="block font-mono text-[10px] uppercase text-slate-400 mb-1">
-                  INITIAL PASSWORD
-                </label>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="block font-bold text-slate-700 dark:text-slate-300">Initial Password *</label>
+                  <span className="text-[10px] text-slate-400">Min 8 characters</span>
+                </div>
                 <div className="relative">
                   <input
                     type={showCleanerPassword ? 'text' : 'password'}
                     required
+                    minLength={8}
                     value={cleanerPassword}
                     onChange={(e) => setCleanerPassword(e.target.value)}
-                    placeholder="Minimum 6 characters"
-                    className="w-full px-3.5 py-2.5 rounded-xl border border-white/10 bg-[#0b0d10] text-white text-xs font-mono focus:border-amber-500/60 focus:outline-hidden"
+                    placeholder="Enter initial password for cleaner"
+                    className="w-full px-3 py-2 pr-10 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white focus:ring-2 focus:ring-purple-500 focus:outline-hidden font-mono text-xs"
+                    autoComplete="new-password"
                   />
                   <button
                     type="button"
                     onClick={() => setShowCleanerPassword(!showCleanerPassword)}
-                    className="absolute right-3 top-2.5 text-slate-400 hover:text-white"
+                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 p-0.5 cursor-pointer"
                   >
                     {showCleanerPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                   </button>
                 </div>
               </div>
 
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
+                    Assigned Supervisor
+                  </label>
+                  <select
+                    value={cleanerSupervisorId}
+                    onChange={(e) => setCleanerSupervisorId(e.target.value)}
+                    className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white focus:ring-2 focus:ring-purple-500 focus:outline-hidden"
+                  >
+                    <option value="">-- Optional / Assign Later --</option>
+                    {supervisors.map((s) => (
+                      <option key={s.id} value={s.id}>
+                        {s.fullName} ({s.email})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">Initial Status *</label>
+                  <select
+                    value={cleanerAccountStatus}
+                    onChange={(e) => setCleanerAccountStatus(e.target.value as any)}
+                    className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white focus:ring-2 focus:ring-purple-500 focus:outline-hidden"
+                  >
+                    <option value="active">Active (Permitted for dispatch)</option>
+                    <option value="pending">Pending (Review required)</option>
+                  </select>
+                </div>
+              </div>
+
               <div>
-                <label className="block font-mono text-[10px] uppercase text-slate-400 mb-1">
-                  ASSIGN SUPERVISOR
+                <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
+                  Authorized Service Localities * ({cleanerSelectedLocalityIds.length} selected)
+                </label>
+                <div className="grid grid-cols-2 gap-2 max-h-36 overflow-y-auto p-2 border border-slate-200 dark:border-slate-700 rounded-xl bg-slate-50 dark:bg-slate-800/60">
+                  {localities.map((loc) => (
+                    <label key={loc.id} className="flex items-center gap-2 cursor-pointer text-xs text-slate-800 dark:text-slate-200">
+                      <input
+                        type="checkbox"
+                        checked={cleanerSelectedLocalityIds.includes(loc.id)}
+                        onChange={() => toggleAddCleanerLocality(loc.id)}
+                        className="rounded text-emerald-600 focus:ring-emerald-500"
+                      />
+                      <span className="truncate">{loc.name}</span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+
+              <div className="pt-2 flex items-center justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setIsAddCleanerOpen(false)}
+                  className="py-2.5 px-4 rounded-xl border border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 font-semibold cursor-pointer transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={isCreatingCleaner}
+                  className="py-2.5 px-5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold shadow-xs cursor-pointer disabled:opacity-40 transition-colors"
+                >
+                  {isCreatingCleaner ? 'Creating Account...' : 'Create Cleaner Account'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* --------------------------------------------------------------------- */}
+      {/* MODAL 2: APPLICATION REVIEW & SUPERVISOR ASSIGNMENT                   */}
+      {/* --------------------------------------------------------------------- */}
+      {selectedApp && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-xs overflow-y-auto">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl w-full max-w-lg p-6 shadow-2xl space-y-4 my-8">
+            <div className="flex items-start justify-between">
+              <div>
+                <h3 className="text-base font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                  <CheckSquare className="w-5 h-5 text-purple-600 dark:text-purple-400" />
+                  Review Cleaner Application
+                </h3>
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                  Applicant: <span className="font-bold text-slate-800 dark:text-slate-200">{selectedApp.cleanerName}</span> ({selectedApp.cleanerEmail})
+                </p>
+              </div>
+              <button
+                onClick={() => setSelectedApp(null)}
+                className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 p-1 cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {appReviewMsg && (
+              <div
+                className={`p-3 rounded-xl text-xs flex items-center gap-2 ${
+                  appReviewMsg.error
+                    ? 'bg-rose-50 dark:bg-rose-950/50 border border-rose-200 dark:border-rose-800 text-rose-800 dark:text-rose-300'
+                    : 'bg-emerald-50 dark:bg-emerald-950/50 border border-emerald-200 dark:border-emerald-800 text-emerald-800 dark:text-emerald-300'
+                }`}
+              >
+                {appReviewMsg.error ? <AlertCircle className="w-4 h-4 shrink-0" /> : <CheckCircle2 className="w-4 h-4 shrink-0" />}
+                <span>{appReviewMsg.text}</span>
+              </div>
+            )}
+
+            <div className="space-y-3.5 text-xs">
+              <div>
+                <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
+                  Assign Operational Supervisor
                 </label>
                 <select
-                  value={cleanerSupervisorId}
-                  onChange={(e) => setCleanerSupervisorId(e.target.value)}
-                  className="w-full px-3.5 py-2.5 rounded-xl border border-white/10 bg-[#0b0d10] text-white text-xs font-mono focus:border-amber-500/60 focus:outline-hidden cursor-pointer"
+                  value={appSupervisorId}
+                  onChange={(e) => setAppSupervisorId(e.target.value)}
+                  className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white focus:ring-2 focus:ring-purple-500 focus:outline-hidden"
                 >
-                  <option value="">-- UNASSIGNED --</option>
+                  <option value="">-- Select Active Supervisor --</option>
+                  {supervisors.map((s) => (
+                    <option key={s.id} value={s.id}>
+                      {s.fullName} ({s.email})
+                    </option>
+                  ))}
+                </select>
+                <p className="text-[10px] text-slate-400 dark:text-slate-500 mt-1">
+                  Cleaners report to and receive authorized task dispatches from their assigned supervisor.
+                </p>
+              </div>
+
+              <div>
+                <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
+                  Authorize Service Localities ({appApprovedLocalityIds.length} approved)
+                </label>
+                <div className="grid grid-cols-2 gap-2 max-h-36 overflow-y-auto p-2 border border-slate-200 dark:border-slate-700 rounded-xl bg-slate-50 dark:bg-slate-800/60">
+                  {localities.map((loc) => (
+                    <label key={loc.id} className="flex items-center gap-2 cursor-pointer text-xs text-slate-800 dark:text-slate-200">
+                      <input
+                        type="checkbox"
+                        checked={appApprovedLocalityIds.includes(loc.id)}
+                        onChange={() => toggleReviewLocality(loc.id)}
+                        className="rounded text-purple-600 focus:ring-purple-500"
+                      />
+                      <span className="truncate">{loc.name}</span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">Review Notes</label>
+                <textarea
+                  rows={2}
+                  value={appNotes}
+                  onChange={(e) => setAppNotes(e.target.value)}
+                  placeholder="e.g. Identity and zone coverage confirmed."
+                  className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white focus:ring-2 focus:ring-purple-500 focus:outline-hidden"
+                />
+              </div>
+
+              <div className="pt-2 flex items-center justify-between gap-3">
+                <button
+                  type="button"
+                  disabled={isReviewingApp}
+                  onClick={() => handleSubmitAppReview('rejected')}
+                  className="py-2.5 px-4 rounded-xl bg-rose-50 dark:bg-rose-950/40 border border-rose-300 dark:border-rose-900/60 hover:bg-rose-100 dark:hover:bg-rose-900/60 text-rose-800 dark:text-rose-300 font-bold cursor-pointer disabled:opacity-40 transition-colors"
+                >
+                  Reject Application
+                </button>
+
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setSelectedApp(null)}
+                    className="py-2.5 px-4 rounded-xl border border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 font-semibold cursor-pointer transition-colors"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    disabled={isReviewingApp}
+                    onClick={() => handleSubmitAppReview('approved')}
+                    className="py-2.5 px-5 rounded-xl bg-purple-600 hover:bg-purple-700 text-white font-bold shadow-xs cursor-pointer disabled:opacity-40 transition-colors"
+                  >
+                    {isReviewingApp ? 'Processing...' : 'Approve & Activate Cleaner'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* --------------------------------------------------------------------- */}
+      {/* MODAL 3: REASSIGN SUPERVISOR                                         */}
+      {/* --------------------------------------------------------------------- */}
+      {reassignCleaner && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-xs">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl w-full max-w-md p-6 shadow-2xl space-y-4">
+            <div className="flex items-start justify-between">
+              <div>
+                <h3 className="text-base font-bold text-slate-900 dark:text-white">
+                  Assign or Change Supervisor
+                </h3>
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                  Cleaner: <span className="font-semibold text-slate-800 dark:text-slate-200">{reassignCleaner.fullName}</span>
+                </p>
+              </div>
+              <button
+                onClick={() => setReassignCleaner(null)}
+                className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 p-1 cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {reassignMsg && (
+              <div
+                className={`p-3 rounded-xl text-xs flex items-center gap-2 ${
+                  reassignMsg.error
+                    ? 'bg-rose-50 dark:bg-rose-950/50 border border-rose-200 dark:border-rose-800 text-rose-800 dark:text-rose-300'
+                    : 'bg-emerald-50 dark:bg-emerald-950/50 border border-emerald-200 dark:border-emerald-800 text-emerald-800 dark:text-emerald-300'
+                }`}
+              >
+                {reassignMsg.error ? <AlertCircle className="w-4 h-4 shrink-0" /> : <CheckCircle2 className="w-4 h-4 shrink-0" />}
+                <span>{reassignMsg.text}</span>
+              </div>
+            )}
+
+            <div className="space-y-3 text-xs">
+              <div>
+                <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
+                  Select Active Supervisor
+                </label>
+                <select
+                  value={newSupervisorId}
+                  onChange={(e) => setNewSupervisorId(e.target.value)}
+                  className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white focus:ring-2 focus:ring-purple-500 focus:outline-hidden"
+                >
+                  <option value="">-- No Supervisor / Unassign --</option>
                   {supervisors.map((s) => (
                     <option key={s.id} value={s.id}>
                       {s.fullName} ({s.email})
@@ -1195,212 +1632,305 @@ export const AdminView: React.FC<AdminViewProps> = ({
                 </select>
               </div>
 
-              <div>
-                <label className="block font-mono text-[10px] uppercase text-slate-400 mb-1">
-                  SELECT SERVICE LOCALITIES
-                </label>
-                <div className="grid grid-cols-2 gap-2 max-h-36 overflow-y-auto p-2 rounded-xl bg-[#0b0d10] border border-white/10">
-                  {localities.map((loc) => {
-                    const checked = cleanerSelectedLocalityIds.includes(loc.id);
-                    return (
-                      <button
-                        key={loc.id}
-                        type="button"
-                        onClick={() => {
-                          setCleanerSelectedLocalityIds((prev) =>
-                            checked ? prev.filter((id) => id !== loc.id) : [...prev, loc.id]
-                          );
-                        }}
-                        className={`p-2 rounded-lg text-left text-xs font-mono flex items-center justify-between border cursor-pointer ${
-                          checked
-                            ? 'border-amber-500/40 bg-amber-950/40 text-amber-300'
-                            : 'border-white/5 bg-[#12161c] text-slate-400'
-                        }`}
-                      >
-                        <span className="truncate">{loc.name}</span>
-                        {checked && <Check className="w-3.5 h-3.5 text-amber-400" />}
-                      </button>
-                    );
-                  })}
-                </div>
+              <div className="pt-2 flex items-center justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setReassignCleaner(null)}
+                  className="py-2 px-3 rounded-xl border border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 font-semibold cursor-pointer transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  disabled={isUpdatingSupervisor}
+                  onClick={handleSaveReassign}
+                  className="py-2 px-4 rounded-xl bg-purple-600 hover:bg-purple-700 text-white font-bold cursor-pointer disabled:opacity-40 transition-colors"
+                >
+                  {isUpdatingSupervisor ? 'Saving...' : 'Save Supervisor Assignment'}
+                </button>
               </div>
-
-              <button
-                type="submit"
-                disabled={isCreatingCleaner}
-                className="w-full py-3 rounded-xl bg-amber-600 hover:bg-amber-500 disabled:opacity-50 text-white font-mono font-bold text-xs uppercase tracking-wider shadow-[0_0_15px_rgba(245,158,11,0.3)] transition-all cursor-pointer min-h-[44px]"
-              >
-                {isCreatingCleaner ? 'CREATING...' : 'CREATE & ACTIVATE CLEANER'}
-              </button>
-            </form>
+            </div>
           </div>
         </div>
       )}
 
-      {/* =========================================================================
-          MODAL: UNIFIED CLEANER ASSIGNMENT (Supervisor + Localities)
-         ========================================================================= */}
+      {/* --------------------------------------------------------------------- */}
+      {/* MODAL 3.5: UNIFIED CLEANER ASSIGNMENT (SUPERVISOR & LOCALITIES)       */}
+      {/* --------------------------------------------------------------------- */}
       {assignModalCleaner && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-xs overflow-y-auto animate-in fade-in duration-150">
-          <div className="bg-[#0f1217] border border-white/10 rounded-3xl w-full max-w-lg p-6 sm:p-7 shadow-2xl space-y-5 my-8 text-slate-100">
-            <div className="flex items-start justify-between border-b border-white/10 pb-4">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-xs">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl w-full max-w-lg p-6 shadow-2xl space-y-4">
+            <div className="flex items-start justify-between">
               <div>
-                <span className="font-mono text-[10px] text-cyan-400 uppercase font-bold">
-                  CLEANER CONFIGURATION
-                </span>
-                <h3 className="text-lg font-mono font-bold uppercase text-white mt-0.5">
-                  {assignModalCleaner.fullName}
+                <h3 className="text-base font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                  <CheckSquare className="w-5 h-5 text-purple-600 dark:text-purple-400" />
+                  Assign Supervisor & Service Localities
                 </h3>
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                  Cleaner: <span className="font-semibold text-slate-800 dark:text-slate-200">{assignModalCleaner.fullName}</span> ({assignModalCleaner.email})
+                </p>
               </div>
               <button
                 onClick={() => setAssignModalCleaner(null)}
-                className="p-1.5 rounded-xl text-slate-400 hover:text-white hover:bg-white/5 cursor-pointer"
+                className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 p-1 cursor-pointer"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
             {assignModalMsg && (
-              <div className="p-3.5 rounded-xl bg-emerald-950/40 border border-emerald-500/30 text-emerald-300 text-xs font-mono">
-                {assignModalMsg.text}
+              <div
+                className={`p-3 rounded-xl text-xs flex items-center gap-2 ${
+                  assignModalMsg.error
+                    ? 'bg-rose-50 dark:bg-rose-950/50 border border-rose-200 dark:border-rose-800 text-rose-800 dark:text-rose-300'
+                    : 'bg-emerald-50 dark:bg-emerald-950/50 border border-emerald-200 dark:border-emerald-800 text-emerald-800 dark:text-emerald-300'
+                }`}
+              >
+                {assignModalMsg.error ? <AlertCircle className="w-4 h-4 shrink-0" /> : <CheckCircle2 className="w-4 h-4 shrink-0" />}
+                <span>{assignModalMsg.text}</span>
               </div>
             )}
 
-            <div className="space-y-4">
+            <div className="space-y-4 text-xs">
               <div>
-                <label className="block font-mono text-[10px] uppercase text-slate-400 mb-1">
-                  ASSIGN SUPERVISOR
+                <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
+                  1. Designated Operations Supervisor
                 </label>
                 <select
                   value={assignModalSupervisorId}
                   onChange={(e) => setAssignModalSupervisorId(e.target.value)}
-                  className="w-full px-3.5 py-2.5 rounded-xl border border-white/10 bg-[#0b0d10] text-white text-xs font-mono cursor-pointer"
+                  className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white focus:ring-2 focus:ring-purple-500 focus:outline-hidden"
                 >
-                  <option value="">-- UNASSIGNED --</option>
+                  <option value="">-- No Supervisor / Unassigned --</option>
                   {supervisors.map((s) => (
                     <option key={s.id} value={s.id}>
                       {s.fullName} ({s.email})
                     </option>
                   ))}
                 </select>
+                <p className="text-[10px] text-slate-400 dark:text-slate-500 mt-1">
+                  This supervisor oversees task dispatch, field verification, and operational sign-off for this cleaner.
+                </p>
               </div>
 
               <div>
-                <label className="block font-mono text-[10px] uppercase text-slate-400 mb-1">
-                  ASSIGNED SERVICE LOCALITIES ({assignModalLocalityIds.length} SELECTED)
-                </label>
-                <div className="grid grid-cols-2 gap-2 max-h-48 overflow-y-auto p-2 rounded-xl bg-[#0b0d10] border border-white/10">
-                  {localities.map((loc) => {
-                    const checked = assignModalLocalityIds.includes(loc.id);
-                    return (
-                      <button
-                        key={loc.id}
-                        type="button"
-                        onClick={() => {
+                <div className="flex items-center justify-between mb-1">
+                  <label className="block font-bold text-slate-700 dark:text-slate-300">
+                    2. Authorized Service Coverage Localities ({assignModalLocalityIds.length} selected)
+                  </label>
+                  <span className="text-[10px] text-slate-400">At least 1 required</span>
+                </div>
+                <div className="grid grid-cols-2 gap-2 max-h-48 overflow-y-auto p-2.5 border border-slate-200 dark:border-slate-700 rounded-xl bg-slate-50 dark:bg-slate-800/60">
+                  {localities.map((loc) => (
+                    <label key={loc.id} className="flex items-center gap-2 cursor-pointer text-xs text-slate-800 dark:text-slate-200 hover:text-purple-600 dark:hover:text-purple-400">
+                      <input
+                        type="checkbox"
+                        checked={assignModalLocalityIds.includes(loc.id)}
+                        onChange={() => {
                           setAssignModalLocalityIds((prev) =>
-                            checked ? prev.filter((id) => id !== loc.id) : [...prev, loc.id]
+                            prev.includes(loc.id)
+                              ? prev.filter((id) => id !== loc.id)
+                              : [...prev, loc.id]
                           );
                         }}
-                        className={`p-2 rounded-lg text-left text-xs font-mono flex items-center justify-between border cursor-pointer ${
-                          checked
-                            ? 'border-cyan-500/40 bg-cyan-950/40 text-cyan-300'
-                            : 'border-white/5 bg-[#12161c] text-slate-400'
-                        }`}
-                      >
-                        <span className="truncate">{loc.name}</span>
-                        {checked && <Check className="w-3.5 h-3.5 text-cyan-400" />}
-                      </button>
-                    );
-                  })}
+                        className="rounded text-purple-600 focus:ring-purple-500"
+                      />
+                      <span className="truncate">{loc.name}</span>
+                    </label>
+                  ))}
                 </div>
               </div>
 
-              <button
-                type="button"
-                onClick={handleSaveUnifiedAssignment}
-                disabled={isSavingUnifiedAssignment}
-                className="w-full py-3 rounded-xl bg-cyan-600 hover:bg-cyan-500 disabled:opacity-50 text-white font-mono font-bold text-xs uppercase tracking-wider shadow-[0_0_15px_rgba(6,182,212,0.3)] transition-all cursor-pointer min-h-[44px]"
-              >
-                {isSavingUnifiedAssignment ? 'SAVING...' : 'SAVE ASSIGNMENTS'}
-              </button>
+              <div className="pt-2 flex items-center justify-end gap-2 border-t border-slate-100 dark:border-slate-800">
+                <button
+                  type="button"
+                  onClick={() => setAssignModalCleaner(null)}
+                  className="py-2 px-3 rounded-xl border border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 font-semibold cursor-pointer transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  disabled={isSavingUnifiedAssignment || assignModalLocalityIds.length === 0}
+                  onClick={handleSaveUnifiedAssignment}
+                  className="py-2 px-4 rounded-xl bg-purple-600 hover:bg-purple-700 text-white font-bold cursor-pointer disabled:opacity-40 transition-colors flex items-center gap-1.5 shadow-xs"
+                >
+                  {isSavingUnifiedAssignment ? 'Saving...' : 'Save Cleaner Assignment'}
+                </button>
+              </div>
             </div>
           </div>
         </div>
       )}
 
-      {/* =========================================================================
-          MODAL: RESET PASSWORD
-         ========================================================================= */}
-      {resetPwUser && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-xs overflow-y-auto animate-in fade-in duration-150">
-          <div className="bg-[#0f1217] border border-white/10 rounded-3xl w-full max-w-md p-6 sm:p-7 shadow-2xl space-y-5 my-8 text-slate-100">
-            <div className="flex items-start justify-between border-b border-white/10 pb-4">
+      {/* --------------------------------------------------------------------- */}
+      {/* MODAL 4: EDIT SERVICE AREAS                                          */}
+      {/* --------------------------------------------------------------------- */}
+      {editAreasCleaner && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-xs">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl w-full max-w-md p-6 shadow-2xl space-y-4">
+            <div className="flex items-start justify-between">
               <div>
-                <span className="font-mono text-[10px] text-amber-400 uppercase font-bold">
-                  SECURITY CREDENTIAL OVERRIDE
-                </span>
-                <h3 className="text-base font-mono font-bold uppercase text-white mt-0.5">
-                  RESET PASSWORD FOR {resetPwUser.fullName}
+                <h3 className="text-base font-bold text-slate-900 dark:text-white">
+                  Update Service Localities
                 </h3>
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                  Cleaner: <span className="font-semibold text-slate-800 dark:text-slate-200">{editAreasCleaner.fullName}</span>
+                </p>
               </div>
               <button
-                onClick={() => setResetPwUser(null)}
-                className="p-1.5 rounded-xl text-slate-400 hover:text-white hover:bg-white/5 cursor-pointer"
+                onClick={() => setEditAreasCleaner(null)}
+                className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 p-1 cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {editAreasMsg && (
+              <div
+                className={`p-3 rounded-xl text-xs flex items-center gap-2 ${
+                  editAreasMsg.error
+                    ? 'bg-rose-50 dark:bg-rose-950/50 border border-rose-200 dark:border-rose-800 text-rose-800 dark:text-rose-300'
+                    : 'bg-emerald-50 dark:bg-emerald-950/50 border border-emerald-200 dark:border-emerald-800 text-emerald-800 dark:text-emerald-300'
+                }`}
+              >
+                {editAreasMsg.error ? <AlertCircle className="w-4 h-4 shrink-0" /> : <CheckCircle2 className="w-4 h-4 shrink-0" />}
+                <span>{editAreasMsg.text}</span>
+              </div>
+            )}
+
+            <div className="space-y-3 text-xs">
+              <label className="block font-bold text-slate-700 dark:text-slate-300">
+                Authorized Localities ({editLocalityIds.length} selected)
+              </label>
+              <div className="grid grid-cols-2 gap-2 max-h-48 overflow-y-auto p-2 border border-slate-200 dark:border-slate-700 rounded-xl bg-slate-50 dark:bg-slate-800/60">
+                {localities.map((loc) => (
+                  <label key={loc.id} className="flex items-center gap-2 cursor-pointer text-xs text-slate-800 dark:text-slate-200">
+                    <input
+                      type="checkbox"
+                      checked={editLocalityIds.includes(loc.id)}
+                      onChange={() => {
+                        setEditLocalityIds((prev) =>
+                          prev.includes(loc.id)
+                            ? prev.filter((id) => id !== loc.id)
+                            : [...prev, loc.id]
+                        );
+                      }}
+                      className="rounded text-purple-600 focus:ring-purple-500"
+                    />
+                    <span className="truncate">{loc.name}</span>
+                  </label>
+                ))}
+              </div>
+
+              <div className="pt-2 flex items-center justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setEditAreasCleaner(null)}
+                  className="py-2 px-3 rounded-xl border border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 font-semibold cursor-pointer transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  disabled={isUpdatingAreas}
+                  onClick={handleSaveServiceAreas}
+                  className="py-2 px-4 rounded-xl bg-purple-600 hover:bg-purple-700 text-white font-bold cursor-pointer disabled:opacity-40 transition-colors"
+                >
+                  {isUpdatingAreas ? 'Saving...' : 'Save Coverage Zones'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* --------------------------------------------------------------------- */}
+      {/* MODAL 5: RESET CLEANER PASSWORD                                      */}
+      {/* --------------------------------------------------------------------- */}
+      {resetPwCleaner && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-xs">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl w-full max-w-md p-6 shadow-2xl space-y-4">
+            <div className="flex items-start justify-between">
+              <div>
+                <h3 className="text-base font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                  <KeyRound className="w-5 h-5 text-purple-600 dark:text-purple-400" />
+                  Set Temporary Password
+                </h3>
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                  Reset password for cleaner: <span className="font-semibold text-slate-800 dark:text-slate-200">{resetPwCleaner.fullName}</span> ({resetPwCleaner.email})
+                </p>
+              </div>
+              <button
+                onClick={() => setResetPwCleaner(null)}
+                className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 p-1 cursor-pointer"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
             {resetPwMsg && (
-              <div className="p-3.5 rounded-xl bg-emerald-950/40 border border-emerald-500/30 text-emerald-300 text-xs font-mono">
-                {resetPwMsg.text}
+              <div
+                className={`p-3 rounded-xl text-xs flex items-center gap-2 ${
+                  resetPwMsg.error
+                    ? 'bg-rose-50 dark:bg-rose-950/50 border border-rose-200 dark:border-rose-800 text-rose-800 dark:text-rose-300'
+                    : 'bg-emerald-50 dark:bg-emerald-950/50 border border-emerald-200 dark:border-emerald-800 text-emerald-800 dark:text-emerald-300'
+                }`}
+              >
+                {resetPwMsg.error ? <AlertCircle className="w-4 h-4 shrink-0" /> : <CheckCircle2 className="w-4 h-4 shrink-0" />}
+                <span>{resetPwMsg.text}</span>
               </div>
             )}
 
-            <form onSubmit={handleResetPassword} className="space-y-4">
+            <div className="space-y-3 text-xs">
               <div>
-                <label className="block font-mono text-[10px] uppercase text-slate-400 mb-1">
-                  NEW PASSWORD
+                <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
+                  New Initial / Temporary Password *
                 </label>
                 <div className="relative">
                   <input
                     type={showResetPw ? 'text' : 'password'}
-                    required
-                    value={newUserPw}
-                    onChange={(e) => setNewUserPw(e.target.value)}
-                    placeholder="Minimum 6 characters"
-                    className="w-full px-3.5 py-2.5 rounded-xl border border-white/10 bg-[#0b0d10] text-white text-xs font-mono focus:border-amber-500/60 focus:outline-hidden"
+                    minLength={8}
+                    value={newCleanerPw}
+                    onChange={(e) => setNewCleanerPw(e.target.value)}
+                    placeholder="Enter at least 8 characters"
+                    className="w-full px-3 py-2 pr-10 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white focus:ring-2 focus:ring-purple-500 focus:outline-hidden font-mono text-xs"
+                    autoComplete="new-password"
                   />
                   <button
                     type="button"
                     onClick={() => setShowResetPw(!showResetPw)}
-                    className="absolute right-3 top-2.5 text-slate-400 hover:text-white"
+                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 p-0.5 cursor-pointer"
                   >
                     {showResetPw ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                   </button>
                 </div>
+                <p className="text-[10px] text-slate-400 dark:text-slate-500 mt-1">
+                  Directly sets the cleaner credential via Supabase Auth admin API. Passwords are never stored in plaintext.
+                </p>
               </div>
 
-              <button
-                type="submit"
-                disabled={isResettingPw || newUserPw.length < 6}
-                className="w-full py-3 rounded-xl bg-amber-600 hover:bg-amber-500 disabled:opacity-40 text-white font-mono font-bold text-xs uppercase tracking-wider shadow-[0_0_15px_rgba(245,158,11,0.3)] transition-all cursor-pointer min-h-[44px]"
-              >
-                {isResettingPw ? 'UPDATING...' : 'UPDATE PASSWORD'}
-              </button>
-            </form>
+              <div className="pt-2 flex items-center justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setResetPwCleaner(null)}
+                  className="py-2 px-3 rounded-xl border border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 font-semibold cursor-pointer transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={isResettingPw}
+                  onClick={handleSaveResetPassword}
+                  className="py-2 px-4 rounded-xl bg-purple-600 hover:bg-purple-700 text-white font-bold cursor-pointer disabled:opacity-40 transition-colors"
+                >
+                  {isResettingPw ? 'Saving...' : 'Update Password'}
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}
-
-      {/* Confirmation Dialog */}
-      <ConfirmModal
-        isOpen={confirmModal.isOpen}
-        title={confirmModal.title}
-        message={confirmModal.message}
-        onConfirm={confirmModal.onConfirm}
-        onCancel={() => setConfirmModal((prev) => ({ ...prev, isOpen: false }))}
-      />
     </div>
   );
 };

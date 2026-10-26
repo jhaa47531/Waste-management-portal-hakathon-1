@@ -419,6 +419,8 @@ export function validateCleanerApplicationInput(input: {
 
   if (localityIds.length < 1) {
     errors.preferredLocalityIds = 'Please select at least 1 preferred service locality.';
+  } else if (localityIds.length > 5) {
+    errors.preferredLocalityIds = 'Please select no more than 5 preferred service localities.';
   }
 
   return {

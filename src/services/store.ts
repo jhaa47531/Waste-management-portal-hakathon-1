@@ -324,13 +324,45 @@ class PortalStore {
 
     try {
       // 1. Fetch active localities
-      const { data: locs } = await supabase.from('localities').select('*').order('name');
-      if (locs && locs.length > 0) {
-        this.state.localities = locs.map((l: any) => ({
-          id: l.id,
-          name: l.name,
-          active: l.active,
-        }));
+      let loadedLocalities = false;
+      try {
+        const { data: locs, error: locsErr } = await supabase.from('localities').select('*').order('name');
+        if (locs && locs.length > 0) {
+          this.state.localities = locs.map((l: any) => ({
+            id: l.id,
+            name: l.name,
+            active:
+              l.is_active !== undefined
+                ? Boolean(l.is_active)
+                : l.active !== undefined
+                ? Boolean(l.active)
+                : true,
+          }));
+          loadedLocalities = true;
+        } else if (locsErr) {
+          console.warn('Direct localities fetch note:', locsErr.message);
+        }
+      } catch (err: any) {
+        console.warn('Direct localities exception:', err?.message);
+      }
+
+      // If direct fetch didn't return rows (e.g. unauthenticated / RLS), try server endpoint
+      if (!loadedLocalities) {
+        try {
+          const apiLocsRes = await fetch('/api/localities');
+          if (apiLocsRes.ok) {
+            const apiLocsData = await apiLocsRes.json();
+            if (apiLocsData?.success && Array.isArray(apiLocsData.localities) && apiLocsData.localities.length > 0) {
+              this.state.localities = apiLocsData.localities.map((l: any) => ({
+                id: l.id,
+                name: l.name,
+                active: l.active !== false,
+              }));
+            }
+          }
+        } catch {
+          // ignore fallback error
+        }
       }
 
       // 2. Fetch complaints (RLS automatically filters by authenticated user role)
@@ -895,6 +927,177 @@ class PortalStore {
     this.state.currentUser = newCleaner;
     this.notify();
     return { success: true, user: newCleaner };
+  }
+
+  /**
+   * Fetches active municipal localities for public selection (e.g. cleaner application).
+   * Cascades from server endpoint to direct Supabase query with error surfacing.
+   */
+  public async fetchActiveLocalities(): Promise<{ localities: Locality[]; error?: string }> {
+    try {
+      // 1. Try public server API first (bypasses unauthenticated anon RLS restrictions)
+      try {
+        const apiRes = await fetch('/api/localities');
+        if (apiRes.ok) {
+          const apiData = await apiRes.json();
+          if (apiData?.success && Array.isArray(apiData.localities)) {
+            const mapped = apiData.localities.map((l: any) => ({
+              id: l.id,
+              name: l.name,
+              active: l.active !== false,
+            }));
+            this.state.localities = mapped;
+            this.notify();
+            return { localities: mapped.filter((l: Locality) => l.active) };
+          }
+          if (apiData?.error) {
+            console.warn('API localities returned error:', apiData.error);
+          }
+        }
+      } catch (err: any) {
+        console.warn('API localities fetch exception:', err?.message);
+      }
+
+      // 2. Direct Supabase query
+      if (this.isLive && supabase) {
+        try {
+          const { data, error } = await supabase
+            .from('localities')
+            .select('*')
+            .order('name');
+
+          if (!error && Array.isArray(data) && data.length > 0) {
+            const mapped = data.map((l: any) => ({
+              id: l.id,
+              name: l.name,
+              active:
+                l.is_active !== undefined
+                  ? Boolean(l.is_active)
+                  : l.active !== undefined
+                  ? Boolean(l.active)
+                  : true,
+            }));
+            this.state.localities = mapped;
+            this.notify();
+            return { localities: mapped.filter((l: Locality) => l.active) };
+          } else if (error) {
+            console.warn('Supabase fetch localities error:', error.message);
+          }
+        } catch (err: any) {
+          console.warn('Direct Supabase localities exception:', err?.message);
+        }
+      }
+
+      // 3. Current active localities in state
+      const active = this.state.localities.filter((l) => l.active);
+      return { localities: active };
+    } catch (err: any) {
+      return { localities: [], error: err?.message || 'Error loading localities.' };
+    }
+  }
+
+  /**
+   * Allows an authorized municipal administrator to create a new operational locality.
+   */
+  public async createLocality(
+    name: string
+  ): Promise<{ success: boolean; locality?: Locality; error?: string }> {
+    const trimmed = (name || '').trim();
+    if (trimmed.length < 2) {
+      return { success: false, error: 'Locality name must be at least 2 characters long.' };
+    }
+
+    const user = this.state.currentUser;
+    if (!user || (user.role !== 'admin' && user.role !== 'administrator')) {
+      return { success: false, error: 'Unauthorized: Only an administrator can create municipal localities.' };
+    }
+
+    // Check duplicate in local state
+    if (this.state.localities.some((l) => l.name.toLowerCase() === trimmed.toLowerCase())) {
+      return { success: false, error: `A locality named "${trimmed}" already exists.` };
+    }
+
+    if (this.isLive && supabase) {
+      // 1. Authenticated server API endpoint
+      try {
+        const { data: sessionData } = await supabase.auth.getSession();
+        const token = sessionData?.session?.access_token;
+        if (token) {
+          const apiRes = await fetch('/api/admin/localities', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${token}`,
+            },
+            body: JSON.stringify({ name: trimmed }),
+          });
+          const apiData = await apiRes.json().catch(() => null);
+          if (apiRes.ok && apiData?.success && apiData.locality) {
+            const newLoc: Locality = {
+              id: apiData.locality.id,
+              name: apiData.locality.name,
+              active: apiData.locality.active !== false,
+            };
+            this.state.localities.push(newLoc);
+            this.notify();
+            return { success: true, locality: newLoc };
+          }
+          if (apiData?.error) {
+            return { success: false, error: apiData.error };
+          }
+        }
+      } catch (err: any) {
+        console.warn('API createLocality exception:', err?.message);
+      }
+
+      // 2. Direct Supabase insert
+      try {
+        let insertPayload: Record<string, any> = { name: trimmed, is_active: true };
+        let { data, error } = await supabase
+          .from('localities')
+          .insert(insertPayload)
+          .select('*')
+          .single();
+
+        if (error && (error.message?.includes('is_active') || error.code === 'PGRST204')) {
+          insertPayload = { name: trimmed, active: true };
+          const retry = await supabase
+            .from('localities')
+            .insert(insertPayload)
+            .select('*')
+            .single();
+          data = retry.data;
+          error = retry.error;
+        }
+
+        if (error) {
+          return { success: false, error: error.message };
+        }
+        if (data) {
+          const newLoc: Locality = {
+            id: data.id,
+            name: data.name,
+            active: data.is_active !== undefined ? Boolean(data.is_active) : (data.active !== undefined ? Boolean(data.active) : true),
+            isActive: true,
+          };
+          this.state.localities.push(newLoc);
+          this.notify();
+          return { success: true, locality: newLoc };
+        }
+      } catch (err: any) {
+        return { success: false, error: err?.message || 'Failed to create locality.' };
+      }
+    }
+
+    // In-memory mode fallback
+    const newLoc: Locality = {
+      id: `loc-${Date.now()}`,
+      name: trimmed,
+      active: true,
+    };
+    this.state.localities.push(newLoc);
+    this.notify();
+    return { success: true, locality: newLoc };
   }
 
   public async loginWithEmail(

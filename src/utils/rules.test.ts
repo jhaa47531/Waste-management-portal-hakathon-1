@@ -690,6 +690,42 @@ test('Supervisor resolution: Return to In-Progress validates staff role, status,
   assert.equal(wrongStatusReturn.allowed, false);
 });
 
+test('Cleaner registration enforces 1 to 5 preferred service localities', () => {
+  // 1. Rejects 0 localities
+  const zeroLoc = validateCleanerApplicationInput({
+    email: 'cleaner@example.com',
+    fullName: 'Jane Cleaner',
+    phoneNumber: '+1-555-0199',
+    password: 'Password123!',
+    preferredLocalityIds: [],
+  });
+  assert.equal(zeroLoc.valid, false);
+  assert.ok(zeroLoc.errors.preferredLocalityIds);
+
+  // 2. Rejects > 5 localities (e.g. 6)
+  const sixLoc = validateCleanerApplicationInput({
+    email: 'cleaner@example.com',
+    fullName: 'Jane Cleaner',
+    phoneNumber: '+1-555-0199',
+    password: 'Password123!',
+    preferredLocalityIds: ['loc-1', 'loc-2', 'loc-3', 'loc-4', 'loc-5', 'loc-6'],
+  });
+  assert.equal(sixLoc.valid, false);
+  assert.match(sixLoc.errors.preferredLocalityIds, /no more than 5/);
+
+  // 3. Accepts 1 to 5 localities
+  const validLoc = validateCleanerApplicationInput({
+    email: 'cleaner@example.com',
+    fullName: 'Jane Cleaner',
+    phoneNumber: '+1-555-0199',
+    password: 'Password123!',
+    preferredLocalityIds: ['loc-1', 'loc-2', 'loc-3'],
+  });
+  assert.equal(validLoc.valid, true);
+  assert.deepEqual(validLoc.errors, {});
+});
+
+
 
 
 

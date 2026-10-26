@@ -20,7 +20,7 @@ import {
   CheckCircle2,
   MapPin,
   ArrowRight,
-  Info,
+  RefreshCw,
 } from 'lucide-react';
 
 interface AuthModalProps {
@@ -52,9 +52,39 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   const [notice, setNotice] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
+  // Localities loading state
+  const [localitiesList, setLocalitiesList] = useState<Locality[]>(localities);
+  const [isLoadingLocalities, setIsLoadingLocalities] = useState(false);
+  const [localitiesError, setLocalitiesError] = useState<string | null>(null);
+
+  // Sync with prop when prop changes
+  useEffect(() => {
+    if (Array.isArray(localities) && localities.length > 0) {
+      setLocalitiesList(localities);
+    }
+  }, [localities]);
+
+  const loadActiveLocalities = async () => {
+    setIsLoadingLocalities(true);
+    setLocalitiesError(null);
+    try {
+      const res = await portalStore.fetchActiveLocalities();
+      if (res.error) {
+        setLocalitiesError(res.error);
+      } else {
+        setLocalitiesList(res.localities);
+      }
+    } catch (err: any) {
+      setLocalitiesError(err?.message || 'Failed to load municipal localities.');
+    } finally {
+      setIsLoadingLocalities(false);
+    }
+  };
+
   useEffect(() => {
     if (isOpen) {
       setActiveRole(targetRole);
+      // Supervisor and Administrator have no public registration
       if (targetRole === 'supervisor' || targetRole === 'admin' || targetRole === 'administrator') {
         setMode('login');
       } else {
@@ -67,9 +97,20 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       setFullName('');
       setPhone('');
       setSelectedLocalityIds([]);
+
+      if (targetRole === 'cleaner' && (initialMode === 'register' || mode === 'register')) {
+        loadActiveLocalities();
+      }
     }
   }, [isOpen, targetRole, initialMode]);
 
+  useEffect(() => {
+    if (isOpen && activeRole === 'cleaner' && mode === 'register') {
+      loadActiveLocalities();
+    }
+  }, [isOpen, activeRole, mode]);
+
+  // When role changes inside modal
   const handleRoleChange = (newRole: UserRole) => {
     setActiveRole(newRole);
     setError(null);
@@ -86,7 +127,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
         return prev.filter((id) => id !== locId);
       } else {
         if (prev.length >= 5) {
-          setError('Maximum 5 preferred localities permitted by municipal policy.');
+          setError('You can select a maximum of 5 preferred localities.');
           return prev;
         }
         return [...prev, locId];
@@ -106,7 +147,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     if (res.success) {
       onClose();
     } else {
-      setError(res.error || 'Authentication failed. Please verify credentials.');
+      setError(res.error || 'Authentication failed. Please check your credentials.');
     }
   };
 
@@ -137,8 +178,9 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       if (res.pendingConfirmation) {
         setNotice(
           res.message ||
-            'Registration successful! Please check your email to confirm your account before logging in.'
+            'Registration successful! Please check your email inbox to verify your account before logging in.'
         );
+        setMode('login');
       } else {
         onClose();
       }
@@ -150,7 +192,6 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   const handleCleanerRegister = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
-    setNotice(null);
 
     if (fullName.trim().length < 2) {
       setError('Full name must be at least 2 characters.');
@@ -160,8 +201,12 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       setError('Phone number must be at least 7 characters.');
       return;
     }
-    if (selectedLocalityIds.length < 3 || selectedLocalityIds.length > 5) {
-      setError('Municipal policy requires selecting between 3 and 5 preferred service localities.');
+    if (selectedLocalityIds.length < 1) {
+      setError('Please select at least 1 preferred service locality (up to 5).');
+      return;
+    }
+    if (selectedLocalityIds.length > 5) {
+      setError('Please select no more than 5 preferred service localities.');
       return;
     }
 
@@ -176,208 +221,229 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     setLoading(false);
 
     if (res.success) {
-      setNotice(
-        'Cleaner onboarding application submitted! Your account is pending supervisor or administrator verification and service-area assignment.'
-      );
-      setMode('login');
+      onClose();
     } else {
-      setError(res.error || 'Failed to submit application.');
+      setError(res.error || 'Cleaner registration failed.');
     }
   };
 
   if (!isOpen) return null;
 
-  const roleMeta: Record<
-    UserRole,
-    { label: string; code: string; icon: React.ReactNode; desc: string; glow: string }
-  > = {
-    resident: {
-      label: 'Resident',
-      code: '01',
-      icon: <Users className="w-4 h-4 text-emerald-400" />,
-      desc: 'Submit complaints & track resolution',
-      glow: 'border-emerald-500/40 text-emerald-300 shadow-[0_0_15px_rgba(16,185,129,0.2)]',
-    },
-    cleaner: {
-      label: 'Cleaner',
-      code: '02',
-      icon: <HardHat className="w-4 h-4 text-amber-400" />,
-      desc: 'Execute assigned pickups & submit proof',
-      glow: 'border-amber-500/40 text-amber-300 shadow-[0_0_15px_rgba(245,158,11,0.2)]',
-    },
-    supervisor: {
-      label: 'Supervisor',
-      code: '03',
-      icon: <UserCheck className="w-4 h-4 text-blue-400" />,
-      desc: 'Triage, verify calls & assign cleaners',
-      glow: 'border-blue-500/40 text-blue-300 shadow-[0_0_15px_rgba(59,130,246,0.2)]',
-    },
-    administrator: {
-      label: 'Admin',
-      code: '04',
-      icon: <ShieldAlert className="w-4 h-4 text-cyan-400" />,
-      desc: 'Governance, provisioning & audit logs',
-      glow: 'border-cyan-500/40 text-cyan-300 shadow-[0_0_15px_rgba(6,182,212,0.2)]',
-    },
-    admin: {
-      label: 'Admin',
-      code: '04',
-      icon: <ShieldAlert className="w-4 h-4 text-cyan-400" />,
-      desc: 'Governance, provisioning & audit logs',
-      glow: 'border-cyan-500/40 text-cyan-300 shadow-[0_0_15px_rgba(6,182,212,0.2)]',
-    },
-  };
-
-  const isStaffRole =
-    activeRole === 'supervisor' || activeRole === 'administrator' || activeRole === 'admin';
+  const isPrivilegedRole = activeRole === 'supervisor' || activeRole === 'admin' || activeRole === 'administrator';
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-xs overflow-y-auto animate-in fade-in duration-150">
-      <div className="w-full max-w-lg rounded-3xl bg-[#0f1217] border border-white/10 p-6 sm:p-7 text-slate-100 shadow-2xl space-y-6 my-8">
-        {/* Top Header */}
-        <div className="flex items-start justify-between">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-xs overflow-y-auto">
+      <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl w-full max-w-lg p-6 sm:p-7 shadow-2xl space-y-5 my-8 text-slate-900 dark:text-slate-100 transition-colors">
+        {/* Header */}
+        <div className="flex items-start justify-between gap-4">
           <div>
-            <div className="flex items-center gap-2 mb-1">
-              <span className="font-mono-display text-[10px] text-emerald-400 font-bold px-1.5 py-0.5 rounded bg-emerald-950/60 border border-emerald-500/30">
-                ROLE GATEWAY
+            <div className="flex items-center gap-2.5">
+              <span className="p-2 rounded-xl bg-emerald-50 dark:bg-emerald-950/50 text-emerald-800 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 shadow-2xs">
+                {activeRole === 'cleaner' ? (
+                  <HardHat className="w-5 h-5 text-amber-600 dark:text-amber-400" />
+                ) : activeRole === 'supervisor' ? (
+                  <UserCheck className="w-5 h-5 text-blue-600 dark:text-blue-400" />
+                ) : activeRole === 'admin' || activeRole === 'administrator' ? (
+                  <ShieldAlert className="w-5 h-5 text-purple-600 dark:text-purple-400" />
+                ) : (
+                  <Users className="w-5 h-5 text-emerald-700 dark:text-emerald-400" />
+                )}
               </span>
-              <span className="font-mono-display text-xs text-slate-400 uppercase tracking-widest">
-                AUTHENTICATION
-              </span>
+              <div>
+                <h3 className="text-lg font-black text-slate-900 dark:text-white tracking-tight">
+                  {activeRole === 'resident'
+                    ? mode === 'login' ? 'Resident Sign In' : 'Resident Self-Registration'
+                    : activeRole === 'cleaner'
+                    ? mode === 'login' ? 'Cleaner Sign In' : 'Cleaner Application Registration'
+                    : activeRole === 'supervisor'
+                    ? 'Supervisor Sign In'
+                    : 'Administrator Sign In'}
+                </h3>
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                  {activeRole === 'resident'
+                    ? 'Report visible waste and track municipal pickups in real time.'
+                    : activeRole === 'cleaner'
+                    ? 'Access assigned service tasks and submit photographic completion evidence.'
+                    : activeRole === 'supervisor'
+                    ? 'Verify resident submissions, review cleaner evidence, and assign staff.'
+                    : 'Authorized administrative governance and supervisor provisioning.'}
+                </p>
+              </div>
             </div>
-            <h2 className="text-xl font-mono-display font-bold text-white uppercase tracking-wider">
-              {mode === 'login' ? 'PORTAL SIGN IN' : 'ACCOUNT REGISTRATION'}
-            </h2>
           </div>
-
           <button
             onClick={onClose}
-            className="p-1.5 rounded-xl text-slate-400 hover:text-white hover:bg-white/5 transition-colors cursor-pointer"
+            className="p-1.5 rounded-xl text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer shrink-0"
             aria-label="Close modal"
           >
             <X className="w-5 h-5" />
           </button>
         </div>
 
-        {/* 4 Role Selector Chips */}
-        <div className="space-y-2">
-          <label className="block font-mono-display text-[10px] uppercase tracking-wider text-slate-400">
-            SELECT WORKSPACE ROLE
+        {/* Role Navigation Choices */}
+        <div className="space-y-1.5">
+          <label className="text-[11px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500 block px-0.5">
+            Role Entry Point
           </label>
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-            {(['resident', 'cleaner', 'supervisor', 'admin'] as UserRole[]).map((r) => {
-              const meta = roleMeta[r];
-              const isSelected = activeRole === r || (r === 'admin' && activeRole === 'administrator');
-              return (
-                <button
-                  key={r}
-                  type="button"
-                  onClick={() => handleRoleChange(r)}
-                  className={`p-2.5 rounded-xl border text-left flex flex-col justify-between transition-all cursor-pointer ${
-                    isSelected
-                      ? `${meta.glow} bg-[#161b24]`
-                      : 'border-white/5 bg-[#12161c] text-slate-400 hover:border-white/10 hover:text-slate-200'
-                  }`}
-                >
-                  <div className="flex items-center justify-between">
-                    <span className="font-mono text-[10px] font-bold text-slate-500">{meta.code}</span>
-                    {meta.icon}
-                  </div>
-                  <span className="font-mono-display text-xs font-bold mt-2 uppercase tracking-wide">
-                    {meta.label}
-                  </span>
-                </button>
-              );
-            })}
+          <div className="grid grid-cols-4 gap-1.5 p-1 bg-slate-100 dark:bg-slate-800/80 rounded-2xl text-xs font-semibold">
+            <button
+              type="button"
+              onClick={() => handleRoleChange('resident')}
+              className={`py-2 px-2 rounded-xl text-center transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                activeRole === 'resident'
+                  ? 'bg-white dark:bg-slate-900 text-emerald-800 dark:text-emerald-300 font-bold shadow-xs border border-slate-200/50 dark:border-slate-700'
+                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+              }`}
+            >
+              <Users className="w-3.5 h-3.5" />
+              <span>Resident</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => handleRoleChange('cleaner')}
+              className={`py-2 px-2 rounded-xl text-center transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                activeRole === 'cleaner'
+                  ? 'bg-white dark:bg-slate-900 text-amber-800 dark:text-amber-300 font-bold shadow-xs border border-slate-200/50 dark:border-slate-700'
+                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+              }`}
+            >
+              <HardHat className="w-3.5 h-3.5" />
+              <span>Cleaner</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => handleRoleChange('supervisor')}
+              className={`py-2 px-2 rounded-xl text-center transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                activeRole === 'supervisor'
+                  ? 'bg-white dark:bg-slate-900 text-blue-800 dark:text-blue-300 font-bold shadow-xs border border-slate-200/50 dark:border-slate-700'
+                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+              }`}
+            >
+              <UserCheck className="w-3.5 h-3.5" />
+              <span>Supervisor</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => handleRoleChange('admin')}
+              className={`py-2 px-2 rounded-xl text-center transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                activeRole === 'admin' || activeRole === 'administrator'
+                  ? 'bg-white dark:bg-slate-900 text-purple-800 dark:text-purple-300 font-bold shadow-xs border border-slate-200/50 dark:border-slate-700'
+                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+              }`}
+            >
+              <ShieldAlert className="w-3.5 h-3.5" />
+              <span>Admin</span>
+            </button>
           </div>
         </div>
 
-        {/* Mode Toggle for Resident & Cleaner */}
-        {!isStaffRole && (
-          <div className="flex rounded-xl bg-[#12161c] p-1 border border-white/5">
-            <button
-              type="button"
-              onClick={() => setMode('login')}
-              className={`flex-1 py-1.5 rounded-lg text-xs font-mono font-bold tracking-wider uppercase transition-all cursor-pointer ${
-                mode === 'login'
-                  ? 'bg-white/10 text-white shadow-xs'
-                  : 'text-slate-400 hover:text-slate-200'
-              }`}
-            >
-              SIGN IN
-            </button>
-            <button
-              type="button"
-              onClick={() => setMode('register')}
-              className={`flex-1 py-1.5 rounded-lg text-xs font-mono font-bold tracking-wider uppercase transition-all cursor-pointer ${
-                mode === 'register'
-                  ? 'bg-white/10 text-white shadow-xs'
-                  : 'text-slate-400 hover:text-slate-200'
-              }`}
-            >
-              REGISTER
-            </button>
-          </div>
-        )}
-
-        {/* Notice & Error Messages */}
+        {/* Success Notice Feedback */}
         {notice && (
-          <div className="p-3.5 rounded-xl bg-emerald-950/40 border border-emerald-500/30 text-emerald-300 text-xs flex items-start gap-2.5">
-            <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
-            <p className="leading-relaxed">{notice}</p>
+          <div className="p-3.5 rounded-2xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800/80 text-emerald-800 dark:text-emerald-300 text-xs flex items-start gap-2.5 shadow-2xs">
+            <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0 mt-0.5" />
+            <span className="leading-relaxed">{notice}</span>
           </div>
         )}
 
+        {/* Error Feedback */}
         {error && (
-          <div className="p-3.5 rounded-xl bg-rose-950/40 border border-rose-500/30 text-rose-300 text-xs flex items-start gap-2.5">
-            <AlertCircle className="w-4 h-4 text-rose-400 shrink-0 mt-0.5" />
-            <p className="leading-relaxed">{error}</p>
+          <div className="p-3.5 rounded-2xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800/80 text-rose-800 dark:text-rose-300 text-xs flex items-start gap-2.5 shadow-2xs">
+            <AlertCircle className="w-4 h-4 text-rose-600 dark:text-rose-400 shrink-0 mt-0.5" />
+            <span className="leading-relaxed">{error}</span>
           </div>
         )}
 
-        {/* Supervisor & Admin Notice */}
-        {isStaffRole && (
-          <div className="p-3 rounded-xl bg-blue-950/30 border border-blue-500/20 text-blue-300 text-xs flex items-start gap-2">
-            <Info className="w-4 h-4 text-blue-400 shrink-0 mt-0.5" />
-            <p className="leading-relaxed">
-              Administrative & Supervisor accounts are provisioned directly by municipal authority governance. Public registration is disabled.
+        {/* Mode Toggle for Resident & Cleaner */}
+        {!isPrivilegedRole && (
+          <div className="flex p-1 bg-slate-100 dark:bg-slate-800/80 rounded-2xl text-xs font-bold">
+            <button
+              type="button"
+              onClick={() => {
+                setMode('login');
+                setError(null);
+              }}
+              className={`flex-1 py-2 rounded-xl transition-all cursor-pointer ${
+                mode === 'login'
+                  ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-xs border border-slate-200/50 dark:border-slate-700'
+                  : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'
+              }`}
+            >
+              Sign In
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setMode('register');
+                setError(null);
+              }}
+              className={`flex-1 py-2 rounded-xl transition-all cursor-pointer ${
+                mode === 'register'
+                  ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-xs border border-slate-200/50 dark:border-slate-700'
+                  : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'
+              }`}
+            >
+              {activeRole === 'cleaner' ? 'Apply as Cleaner' : 'Register as Resident'}
+            </button>
+          </div>
+        )}
+
+        {/* Supervisor Provisioning Notice */}
+        {activeRole === 'supervisor' && (
+          <div className="p-3.5 rounded-2xl bg-blue-50 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-800/80 text-blue-900 dark:text-blue-300 text-xs flex items-start gap-2.5 shadow-2xs leading-relaxed">
+            <UserCheck className="w-4 h-4 text-blue-600 dark:text-blue-400 shrink-0 mt-0.5" />
+            <p>
+              Supervisor accounts are securely provisioned and activated by the Municipal Administrator. If you do not have credentials yet, please contact your municipal department administrator.
+            </p>
+          </div>
+        )}
+
+        {/* Administrator Notice */}
+        {(activeRole === 'admin' || activeRole === 'administrator') && (
+          <div className="p-3.5 rounded-2xl bg-purple-50 dark:bg-purple-950/40 border border-purple-200 dark:border-purple-800/80 text-purple-900 dark:text-purple-300 text-xs flex items-start gap-2.5 shadow-2xs leading-relaxed">
+            <ShieldAlert className="w-4 h-4 text-purple-600 dark:text-purple-400 shrink-0 mt-0.5" />
+            <p>
+              Designated Municipal Administrator login (<code className="font-mono font-semibold text-purple-800 dark:text-purple-300 bg-purple-100/60 dark:bg-purple-900/60 px-1 py-0.5 rounded">jhaa47531@gmail.com</code>). Enter your password to access supervisor provisioning and governance.
             </p>
           </div>
         )}
 
         {/* Forms */}
         {mode === 'login' ? (
-          <form onSubmit={handleLogin} className="space-y-4">
+          <form onSubmit={handleLogin} className="space-y-4 text-xs">
             <div>
-              <label className="block font-mono-display text-[10px] uppercase tracking-wider text-slate-400 mb-1">
-                EMAIL ADDRESS
+              <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1.5">
+                Email Address
               </label>
               <div className="relative">
-                <Mail className="w-4 h-4 text-slate-500 absolute left-3.5 top-3" />
+                <Mail className="w-4 h-4 text-slate-400 dark:text-slate-500 absolute left-3.5 top-3" />
                 <input
                   type="email"
                   required
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  placeholder="name@civicpickup.gov"
-                  className="w-full pl-10 pr-3.5 py-2.5 rounded-xl border border-white/10 bg-[#12161c] text-white placeholder:text-slate-600 text-xs font-mono focus:border-emerald-500/60 focus:outline-hidden transition-colors"
+                  placeholder={
+                    activeRole === 'admin' || activeRole === 'administrator'
+                      ? 'jhaa47531@gmail.com'
+                      : 'name@example.com'
+                  }
+                  className="w-full pl-10 pr-3.5 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition-colors"
                 />
               </div>
             </div>
 
             <div>
-              <label className="block font-mono-display text-[10px] uppercase tracking-wider text-slate-400 mb-1">
-                PASSWORD
+              <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1.5">
+                Password
               </label>
               <div className="relative">
-                <Lock className="w-4 h-4 text-slate-500 absolute left-3.5 top-3" />
+                <Lock className="w-4 h-4 text-slate-400 dark:text-slate-500 absolute left-3.5 top-3" />
                 <input
                   type="password"
                   required
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  placeholder="••••••••"
-                  className="w-full pl-10 pr-3.5 py-2.5 rounded-xl border border-white/10 bg-[#12161c] text-white placeholder:text-slate-600 text-xs font-mono focus:border-emerald-500/60 focus:outline-hidden transition-colors"
+                  placeholder="Enter your password"
+                  className="w-full pl-10 pr-3.5 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition-colors"
                 />
               </div>
             </div>
@@ -385,201 +451,285 @@ export const AuthModal: React.FC<AuthModalProps> = ({
             <button
               type="submit"
               disabled={loading}
-              className="w-full py-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white font-mono-display font-bold text-xs uppercase tracking-wider shadow-[0_0_20px_rgba(16,185,129,0.3)] transition-all cursor-pointer flex items-center justify-center gap-2"
+              className="w-full py-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold shadow-sm shadow-emerald-600/20 transition-all cursor-pointer disabled:opacity-50 flex items-center justify-center gap-2"
             >
-              {loading ? 'AUTHENTICATING...' : 'ENTER WORKSPACE'}
+              <span>
+                {loading ? 'Authenticating...' : `Sign In as ${
+                  activeRole === 'resident'
+                    ? 'Resident'
+                    : activeRole === 'cleaner'
+                    ? 'Cleaner'
+                    : activeRole === 'supervisor'
+                    ? 'Supervisor'
+                    : 'Administrator'
+                }`}
+              </span>
+              {!loading && <ArrowRight className="w-4 h-4" />}
             </button>
           </form>
-        ) : activeRole === 'resident' ? (
-          /* Resident Registration Form */
-          <form onSubmit={handleResidentRegister} className="space-y-4">
+        ) : activeRole === 'cleaner' ? (
+          /* Cleaner Registration Form */
+          <form onSubmit={handleCleanerRegister} className="space-y-3.5 text-xs">
             <div>
-              <label className="block font-mono-display text-[10px] uppercase tracking-wider text-slate-400 mb-1">
-                FULL NAME
+              <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1.5">
+                Full Name *
               </label>
               <div className="relative">
-                <User className="w-4 h-4 text-slate-500 absolute left-3.5 top-3" />
+                <User className="w-4 h-4 text-slate-400 dark:text-slate-500 absolute left-3.5 top-3" />
                 <input
                   type="text"
                   required
                   value={fullName}
                   onChange={(e) => setFullName(e.target.value)}
-                  placeholder="Resident Full Name"
-                  className="w-full pl-10 pr-3.5 py-2.5 rounded-xl border border-white/10 bg-[#12161c] text-white placeholder:text-slate-600 text-xs font-mono focus:border-emerald-500/60 focus:outline-hidden transition-colors"
+                  placeholder="e.g. John Sanitation"
+                  className="w-full pl-10 pr-3.5 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition-colors"
                 />
               </div>
             </div>
 
             <div>
-              <label className="block font-mono-display text-[10px] uppercase tracking-wider text-slate-400 mb-1">
-                CONTACT PHONE (FOR SUPERVISOR VERIFICATION CALL)
+              <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1.5">
+                Contact Phone Number *
               </label>
               <div className="relative">
-                <Phone className="w-4 h-4 text-slate-500 absolute left-3.5 top-3" />
+                <Phone className="w-4 h-4 text-slate-400 dark:text-slate-500 absolute left-3.5 top-3" />
                 <input
                   type="tel"
                   required
                   value={phone}
                   onChange={(e) => setPhone(e.target.value)}
-                  placeholder="+1-555-0100"
-                  className="w-full pl-10 pr-3.5 py-2.5 rounded-xl border border-white/10 bg-[#12161c] text-white placeholder:text-slate-600 text-xs font-mono focus:border-emerald-500/60 focus:outline-hidden transition-colors"
+                  placeholder="e.g. +1-555-0188"
+                  className="w-full pl-10 pr-3.5 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition-colors"
                 />
               </div>
             </div>
 
             <div>
-              <label className="block font-mono-display text-[10px] uppercase tracking-wider text-slate-400 mb-1">
-                EMAIL ADDRESS
+              <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1.5">
+                Email Address *
               </label>
               <div className="relative">
-                <Mail className="w-4 h-4 text-slate-500 absolute left-3.5 top-3" />
+                <Mail className="w-4 h-4 text-slate-400 dark:text-slate-500 absolute left-3.5 top-3" />
+                <input
+                  type="email"
+                  required
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  placeholder="cleaner@example.com"
+                  className="w-full pl-10 pr-3.5 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition-colors"
+                />
+              </div>
+            </div>
+
+            <div>
+              <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1.5">
+                Password *
+              </label>
+              <div className="relative">
+                <Lock className="w-4 h-4 text-slate-400 dark:text-slate-500 absolute left-3.5 top-3" />
+                <input
+                  type="password"
+                  required
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder="Create a secure password"
+                  className="w-full pl-10 pr-3.5 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition-colors"
+                />
+              </div>
+            </div>
+
+            {/* Preferred Localities */}
+            <div className="space-y-1.5 pt-1">
+              <div className="flex items-center justify-between">
+                <label className="block font-bold text-slate-700 dark:text-slate-300">
+                  Select Preferred Service Localities (1 to 5) *
+                </label>
+                <span
+                  className={`text-[11px] font-bold px-2 py-0.5 rounded-full ${
+                    selectedLocalityIds.length >= 1 && selectedLocalityIds.length <= 5
+                      ? 'bg-emerald-100 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-300'
+                      : 'bg-amber-100 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300'
+                  }`}
+                >
+                  Selected: {selectedLocalityIds.length} / 5
+                </span>
+              </div>
+              <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                Choose the municipal wards you can service. Final service authorization is confirmed by the supervisor.
+              </p>
+
+              {/* Loading Indicator */}
+              {isLoadingLocalities && (
+                <div className="py-6 px-4 border border-slate-200 dark:border-slate-700/80 rounded-xl bg-slate-50/70 dark:bg-slate-800/50 flex flex-col items-center justify-center gap-2">
+                  <div className="w-5 h-5 border-2 border-emerald-600 border-t-transparent rounded-full animate-spin" />
+                  <span className="text-xs text-slate-600 dark:text-slate-400 font-medium">
+                    Loading municipal localities...
+                  </span>
+                </div>
+              )}
+
+              {/* Error State with Retry Button */}
+              {!isLoadingLocalities && localitiesError && (
+                <div className="p-3.5 rounded-xl border border-rose-200 dark:border-rose-800 bg-rose-50 dark:bg-rose-950/40 text-xs text-rose-800 dark:text-rose-300 space-y-2.5">
+                  <div className="flex items-start gap-2">
+                    <AlertCircle className="w-4 h-4 text-rose-600 dark:text-rose-400 shrink-0 mt-0.5" />
+                    <p className="leading-relaxed">{localitiesError}</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={loadActiveLocalities}
+                    className="px-3 py-1.5 bg-rose-600 hover:bg-rose-700 text-white font-bold rounded-lg text-xs transition-colors cursor-pointer flex items-center gap-1.5"
+                  >
+                    <RefreshCw className="w-3.5 h-3.5" />
+                    <span>Retry Loading Localities</span>
+                  </button>
+                </div>
+              )}
+
+              {/* Empty State Message */}
+              {!isLoadingLocalities &&
+                !localitiesError &&
+                localitiesList.filter((l) => l.active).length === 0 && (
+                  <div className="p-4 rounded-xl border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/30 text-center space-y-1.5 text-xs text-amber-900 dark:text-amber-300">
+                    <MapPin className="w-5 h-5 text-amber-600 dark:text-amber-400 mx-auto" />
+                    <p className="font-bold">No active municipal localities found.</p>
+                    <p className="text-[11px] text-slate-600 dark:text-slate-400">
+                      An authorized administrator must create operational localities before cleaners can register service areas.
+                    </p>
+                  </div>
+                )}
+
+              {/* Selectable Localities List */}
+              {!isLoadingLocalities &&
+                !localitiesError &&
+                localitiesList.filter((l) => l.active).length > 0 && (
+                  <div className="max-h-40 overflow-y-auto border border-slate-200 dark:border-slate-700/80 rounded-xl p-2 space-y-1 bg-slate-50/70 dark:bg-slate-800/50">
+                    {localitiesList
+                      .filter((l) => l.active)
+                      .map((loc) => {
+                        const isSelected = selectedLocalityIds.includes(loc.id);
+                        return (
+                          <button
+                            type="button"
+                            key={loc.id}
+                            onClick={() => handleToggleLocality(loc.id)}
+                            className={`w-full text-left px-2.5 py-2 rounded-lg text-xs flex items-center justify-between transition-colors cursor-pointer ${
+                              isSelected
+                                ? 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-900 dark:text-emerald-200 font-semibold border border-emerald-300 dark:border-emerald-700'
+                                : 'bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700/60 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700'
+                            }`}
+                          >
+                            <span className="flex items-center gap-1.5">
+                              <MapPin className="w-3.5 h-3.5 text-slate-400 dark:text-slate-500" />
+                              {loc.name}
+                            </span>
+                            {isSelected ? (
+                              <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                            ) : (
+                              <span className="w-4 h-4 rounded-full border border-slate-300 dark:border-slate-600 shrink-0" />
+                            )}
+                          </button>
+                        );
+                      })}
+                  </div>
+                )}
+            </div>
+
+            <div className="p-3 rounded-2xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800/80 text-amber-900 dark:text-amber-300 text-[11px] leading-relaxed shadow-2xs">
+              Cleaner applications require supervisor review before tasks can be assigned. Your account will remain in <span className="font-semibold">pending</span> status until authorized.
+            </div>
+
+            <button
+              type="submit"
+              disabled={loading}
+              className="w-full py-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold shadow-sm shadow-emerald-600/20 transition-all cursor-pointer disabled:opacity-50 flex items-center justify-center gap-2"
+            >
+              <span>{loading ? 'Submitting Application...' : 'Submit Cleaner Application'}</span>
+              {!loading && <ArrowRight className="w-4 h-4" />}
+            </button>
+          </form>
+        ) : (
+          /* Resident Registration Form */
+          <form onSubmit={handleResidentRegister} className="space-y-3.5 text-xs">
+            <div>
+              <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1.5">
+                Full Name *
+              </label>
+              <div className="relative">
+                <User className="w-4 h-4 text-slate-400 dark:text-slate-500 absolute left-3.5 top-3" />
+                <input
+                  type="text"
+                  required
+                  value={fullName}
+                  onChange={(e) => setFullName(e.target.value)}
+                  placeholder="Enter your full name"
+                  className="w-full pl-10 pr-3.5 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition-colors"
+                />
+              </div>
+            </div>
+
+            <div>
+              <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1.5">
+                Contact Phone Number (Mandatory for pickup verification) *
+              </label>
+              <div className="relative">
+                <Phone className="w-4 h-4 text-slate-400 dark:text-slate-500 absolute left-3.5 top-3" />
+                <input
+                  type="tel"
+                  required
+                  value={phone}
+                  onChange={(e) => setPhone(e.target.value)}
+                  placeholder="e.g. 555-0123"
+                  className="w-full pl-10 pr-3.5 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition-colors"
+                />
+              </div>
+            </div>
+
+            <div>
+              <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1.5">
+                Email Address *
+              </label>
+              <div className="relative">
+                <Mail className="w-4 h-4 text-slate-400 dark:text-slate-500 absolute left-3.5 top-3" />
                 <input
                   type="email"
                   required
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   placeholder="resident@example.com"
-                  className="w-full pl-10 pr-3.5 py-2.5 rounded-xl border border-white/10 bg-[#12161c] text-white placeholder:text-slate-600 text-xs font-mono focus:border-emerald-500/60 focus:outline-hidden transition-colors"
+                  className="w-full pl-10 pr-3.5 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition-colors"
                 />
               </div>
             </div>
 
             <div>
-              <label className="block font-mono-display text-[10px] uppercase tracking-wider text-slate-400 mb-1">
-                PASSWORD
+              <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1.5">
+                Password *
               </label>
               <div className="relative">
-                <Lock className="w-4 h-4 text-slate-500 absolute left-3.5 top-3" />
+                <Lock className="w-4 h-4 text-slate-400 dark:text-slate-500 absolute left-3.5 top-3" />
                 <input
                   type="password"
                   required
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  placeholder="Minimum 6 characters"
-                  className="w-full pl-10 pr-3.5 py-2.5 rounded-xl border border-white/10 bg-[#12161c] text-white placeholder:text-slate-600 text-xs font-mono focus:border-emerald-500/60 focus:outline-hidden transition-colors"
+                  placeholder="Create a password"
+                  className="w-full pl-10 pr-3.5 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition-colors"
                 />
               </div>
             </div>
+
+            <p className="text-[11px] text-slate-500 dark:text-slate-400">
+              Municipal Security Policy: Public resident registrations are strictly granted the <code className="font-mono text-emerald-800 dark:text-emerald-300 font-semibold">resident</code> role.
+            </p>
 
             <button
               type="submit"
               disabled={loading}
-              className="w-full py-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white font-mono-display font-bold text-xs uppercase tracking-wider shadow-[0_0_20px_rgba(16,185,129,0.3)] transition-all cursor-pointer flex items-center justify-center gap-2"
+              className="w-full py-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold shadow-sm shadow-emerald-600/20 transition-all cursor-pointer disabled:opacity-50 flex items-center justify-center gap-2"
             >
-              {loading ? 'REGISTERING...' : 'CREATE RESIDENT ACCOUNT'}
-            </button>
-          </form>
-        ) : (
-          /* Cleaner Onboarding Application Form */
-          <form onSubmit={handleCleanerRegister} className="space-y-4">
-            <div>
-              <label className="block font-mono-display text-[10px] uppercase tracking-wider text-slate-400 mb-1">
-                FULL NAME
-              </label>
-              <div className="relative">
-                <User className="w-4 h-4 text-slate-500 absolute left-3.5 top-3" />
-                <input
-                  type="text"
-                  required
-                  value={fullName}
-                  onChange={(e) => setFullName(e.target.value)}
-                  placeholder="Cleaner Full Name"
-                  className="w-full pl-10 pr-3.5 py-2.5 rounded-xl border border-white/10 bg-[#12161c] text-white placeholder:text-slate-600 text-xs font-mono focus:border-amber-500/60 focus:outline-hidden transition-colors"
-                />
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div>
-                <label className="block font-mono-display text-[10px] uppercase tracking-wider text-slate-400 mb-1">
-                  PHONE NUMBER
-                </label>
-                <div className="relative">
-                  <Phone className="w-4 h-4 text-slate-500 absolute left-3.5 top-3" />
-                  <input
-                    type="tel"
-                    required
-                    value={phone}
-                    onChange={(e) => setPhone(e.target.value)}
-                    placeholder="+1-555-0100"
-                    className="w-full pl-10 pr-3.5 py-2.5 rounded-xl border border-white/10 bg-[#12161c] text-white placeholder:text-slate-600 text-xs font-mono focus:border-amber-500/60 focus:outline-hidden transition-colors"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="block font-mono-display text-[10px] uppercase tracking-wider text-slate-400 mb-1">
-                  EMAIL
-                </label>
-                <div className="relative">
-                  <Mail className="w-4 h-4 text-slate-500 absolute left-3.5 top-3" />
-                  <input
-                    type="email"
-                    required
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    placeholder="cleaner@example.com"
-                    className="w-full pl-10 pr-3.5 py-2.5 rounded-xl border border-white/10 bg-[#12161c] text-white placeholder:text-slate-600 text-xs font-mono focus:border-amber-500/60 focus:outline-hidden transition-colors"
-                  />
-                </div>
-              </div>
-            </div>
-
-            <div>
-              <label className="block font-mono-display text-[10px] uppercase tracking-wider text-slate-400 mb-1">
-                PASSWORD
-              </label>
-              <div className="relative">
-                <Lock className="w-4 h-4 text-slate-500 absolute left-3.5 top-3" />
-                <input
-                  type="password"
-                  required
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  placeholder="Minimum 6 characters"
-                  className="w-full pl-10 pr-3.5 py-2.5 rounded-xl border border-white/10 bg-[#12161c] text-white placeholder:text-slate-600 text-xs font-mono focus:border-amber-500/60 focus:outline-hidden transition-colors"
-                />
-              </div>
-            </div>
-
-            {/* Select 3-5 Service Localities */}
-            <div className="p-3.5 rounded-2xl bg-[#12161c] border border-white/10 space-y-2">
-              <div className="flex items-center justify-between">
-                <label className="block font-mono-display text-[10px] uppercase tracking-wider text-amber-300 font-bold">
-                  PREFERRED LOCALITIES (SELECT 3 TO 5)
-                </label>
-                <span className="font-mono text-[10px] px-2 py-0.5 rounded-md bg-white/5 text-slate-300">
-                  {selectedLocalityIds.length} / 5 SELECTED
-                </span>
-              </div>
-              <div className="grid grid-cols-2 gap-1.5 max-h-40 overflow-y-auto pr-1">
-                {localities.map((loc) => {
-                  const checked = selectedLocalityIds.includes(loc.id);
-                  return (
-                    <button
-                      key={loc.id}
-                      type="button"
-                      onClick={() => handleToggleLocality(loc.id)}
-                      className={`p-2 rounded-xl text-left text-xs font-mono flex items-center justify-between border transition-all cursor-pointer ${
-                        checked
-                          ? 'border-amber-500/40 bg-amber-950/40 text-amber-200'
-                          : 'border-white/5 bg-[#0f1217] text-slate-400 hover:border-white/10'
-                      }`}
-                    >
-                      <span className="truncate">{loc.name}</span>
-                      {checked && <CheckCircle2 className="w-3.5 h-3.5 text-amber-400 shrink-0" />}
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-
-            <button
-              type="submit"
-              disabled={loading}
-              className="w-full py-3 rounded-xl bg-amber-600 hover:bg-amber-500 disabled:opacity-50 text-white font-mono-display font-bold text-xs uppercase tracking-wider shadow-[0_0_20px_rgba(245,158,11,0.3)] transition-all cursor-pointer flex items-center justify-center gap-2"
-            >
-              {loading ? 'SUBMITTING APPLICATION...' : 'SUBMIT CLEANER APPLICATION'}
+              <span>{loading ? 'Registering Account...' : 'Register Resident Account'}</span>
+              {!loading && <ArrowRight className="w-4 h-4" />}
             </button>
           </form>
         )}

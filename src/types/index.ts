@@ -33,6 +33,7 @@ export interface Locality {
   id: string;
   name: string;
   active: boolean;
+  isActive?: boolean;
 }
 
 export interface CleanerApplication {
