@@ -1806,13 +1806,20 @@ app.post('/api/supervisor/assign-cleaner', async (req: Request, res: Response) =
       updated_at: new Date().toISOString(),
     };
     if (notes) {
-      updatePayload.supervisor_notes = notes;
+      updatePayload.supervisor_note = notes;
     }
 
-    const { error: updateErr } = await supabaseAdmin
+    let { error: updateErr } = await supabaseAdmin
       .from('complaints')
       .update(updatePayload)
       .eq('id', complaintId);
+
+    if (updateErr && (updateErr.message?.includes('supervisor_note') || updateErr.code === 'PGRST204')) {
+      delete updatePayload.supervisor_note;
+      updatePayload.supervisor_notes = notes;
+      const retryRes = await supabaseAdmin.from('complaints').update(updatePayload).eq('id', complaintId);
+      updateErr = retryRes.error;
+    }
 
     if (updateErr) {
       return res.status(500).json({ success: false, error: updateErr.message });
@@ -2045,13 +2052,25 @@ app.post('/api/supervisor/approve-completion', async (req: Request, res: Respons
       updated_at: nowIso,
     };
     if (notes && notes.trim()) {
-      updatePayload.supervisor_notes = notes.trim();
+      updatePayload.supervisor_note = notes.trim();
     }
 
-    const { error: updateErr } = await supabaseAdmin
+    let { error: updateErr } = await supabaseAdmin
       .from('complaints')
       .update(updatePayload)
       .eq('id', complaintId);
+
+    if (updateErr && (updateErr.message?.includes('supervisor_note') || updateErr.code === 'PGRST204')) {
+      if (notes && notes.trim()) {
+        delete updatePayload.supervisor_note;
+        updatePayload.supervisor_notes = notes.trim();
+        const retryRes = await supabaseAdmin
+          .from('complaints')
+          .update(updatePayload)
+          .eq('id', complaintId);
+        updateErr = retryRes.error;
+      }
+    }
 
     if (updateErr) {
       return res.status(500).json({
@@ -2123,14 +2142,26 @@ app.post('/api/supervisor/return-to-progress', async (req: Request, res: Respons
 
     // 2. Update complaint status back to in_progress with supervisor rework note
     const nowIso = new Date().toISOString();
-    const { error: updateErr } = await supabaseAdmin
+    let { error: updateErr } = await supabaseAdmin
       .from('complaints')
       .update({
         status: 'in_progress',
-        supervisor_notes: actualNote,
+        supervisor_note: actualNote,
         updated_at: nowIso,
       })
       .eq('id', complaintId);
+
+    if (updateErr && (updateErr.message?.includes('supervisor_note') || updateErr.code === 'PGRST204')) {
+      const retryRes = await supabaseAdmin
+        .from('complaints')
+        .update({
+          status: 'in_progress',
+          supervisor_notes: actualNote,
+          updated_at: nowIso,
+        })
+        .eq('id', complaintId);
+      updateErr = retryRes.error;
+    }
 
     if (updateErr) {
       return res.status(500).json({

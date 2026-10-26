@@ -399,7 +399,8 @@ class PortalStore {
           supervisorId: c.supervisor_id,
           supervisorName: c.supervisor_name,
           rejectionReason: c.rejection_reason,
-          supervisorNotes: c.supervisor_notes,
+          supervisorNote: c.supervisor_note || c.supervisor_notes || null,
+          supervisorNotes: c.supervisor_note || c.supervisor_notes || null,
           residentConfirmedAt: c.resident_confirmed_at,
           createdAt: c.created_at,
           updatedAt: c.updated_at,
@@ -1432,7 +1433,10 @@ class PortalStore {
     complaint.assignedCleanerName = cleaner.fullName;
     complaint.supervisorId = user.id;
     complaint.supervisorName = user.fullName;
-    if (notes) complaint.supervisorNotes = notes;
+    if (notes) {
+      complaint.supervisorNote = notes;
+      complaint.supervisorNotes = notes;
+    }
     complaint.updatedAt = timestamp;
 
     complaint.history.push({
@@ -1536,7 +1540,10 @@ class PortalStore {
     const oldStatus = complaint.status;
 
     complaint.status = 'completed';
-    if (notes) complaint.supervisorNotes = notes;
+    if (notes) {
+      complaint.supervisorNote = notes;
+      complaint.supervisorNotes = notes;
+    }
     complaint.updatedAt = timestamp;
 
     complaint.history.push({
@@ -1639,6 +1646,7 @@ class PortalStore {
     const oldStatus = complaint.status;
 
     complaint.status = 'in_progress';
+    complaint.supervisorNote = returnNote;
     complaint.supervisorNotes = returnNote;
     complaint.updatedAt = timestamp;
 

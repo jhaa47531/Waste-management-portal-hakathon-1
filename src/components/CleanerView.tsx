@@ -572,13 +572,13 @@ export const CleanerView: React.FC<CleanerViewProps> = ({
                   {selectedTask.latitude.toFixed(6)}, {selectedTask.longitude.toFixed(6)}
                 </span>
               </div>
-              {selectedTask.supervisorNotes && (
+              {(selectedTask.supervisorNote || selectedTask.supervisorNotes) && (
                 <div className="pt-2 border-t border-slate-200 dark:border-slate-700">
                   <span className="font-bold text-amber-900 dark:text-amber-300 block">
                     Supervisor Instructions:
                   </span>
                   <p className="text-amber-800 dark:text-amber-200 mt-0.5 leading-relaxed">
-                    {selectedTask.supervisorNotes}
+                    {selectedTask.supervisorNote || selectedTask.supervisorNotes}
                   </p>
                 </div>
               )}

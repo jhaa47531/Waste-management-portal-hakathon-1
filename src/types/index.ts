@@ -105,6 +105,7 @@ export interface Complaint {
   supervisorId?: string | null;
   supervisorName?: string | null;
   rejectionReason?: string | null;
+  supervisorNote?: string | null;
   supervisorNotes?: string | null;
   residentConfirmedAt?: string | null;
   createdAt: string;

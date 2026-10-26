@@ -1366,6 +1366,12 @@ export const SupervisorView: React.FC<SupervisorViewProps> = ({
                       <p className="mt-0.5 leading-relaxed">{selectedComplaint.rejectionReason}</p>
                     </div>
                   )}
+                  {(selectedComplaint.supervisorNote || selectedComplaint.supervisorNotes) && (
+                    <div className="pt-2 border-t border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-200">
+                      <span className="font-bold block text-slate-700 dark:text-slate-300">Supervisor Note:</span>
+                      <p className="mt-0.5 leading-relaxed">{selectedComplaint.supervisorNote || selectedComplaint.supervisorNotes}</p>
+                    </div>
+                  )}
                 </div>
 
                 {/* Audit Timeline */}
