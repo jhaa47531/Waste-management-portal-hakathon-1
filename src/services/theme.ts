@@ -3,28 +3,23 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 
 export type ThemeMode = 'light' | 'dark';
 
-const THEME_STORAGE_KEY = 'civicpickup_theme';
-const THEME_DEFAULT_DARK_FLAG = 'civicpickup_theme_dark_default';
+export const THEME_STORAGE_KEY = 'civicpickup_theme';
 
 export function getInitialTheme(): ThemeMode {
-  if (typeof window === 'undefined') return 'dark';
+  if (typeof window === 'undefined') return 'light';
   try {
-    const initialized = localStorage.getItem(THEME_DEFAULT_DARK_FLAG);
-    if (!initialized) {
-      localStorage.setItem(THEME_DEFAULT_DARK_FLAG, 'true');
-      localStorage.setItem(THEME_STORAGE_KEY, 'dark');
-      return 'dark';
-    }
     const saved = localStorage.getItem(THEME_STORAGE_KEY);
-    if (saved === 'dark' || saved === 'light') return saved;
+    if (saved === 'dark' || saved === 'light') {
+      return saved;
+    }
   } catch {
-    // Ignore storage errors
+    // Ignore storage access errors
   }
-  return 'dark';
+  return 'light'; // Light Mode is the default for first-time visitors
 }
 
 export function applyTheme(theme: ThemeMode) {
@@ -39,26 +34,64 @@ export function applyTheme(theme: ThemeMode) {
   }
   try {
     localStorage.setItem(THEME_STORAGE_KEY, theme);
-    localStorage.setItem(THEME_DEFAULT_DARK_FLAG, 'true');
   } catch {
-    // Ignore storage errors
+    // Ignore storage write errors
   }
 }
 
-export function useTheme() {
+interface ThemeContextType {
+  theme: ThemeMode;
+  isDark: boolean;
+  toggleTheme: () => void;
+  setTheme: (mode: ThemeMode) => void;
+}
+
+const ThemeContext = createContext<ThemeContextType | null>(null);
+
+export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [theme, setThemeState] = useState<ThemeMode>(() => getInitialTheme());
 
   useEffect(() => {
     applyTheme(theme);
   }, [theme]);
 
-  const toggleTheme = () => {
+  // Sync across tabs/windows if storage event triggers
+  useEffect(() => {
+    const handleStorage = (e: StorageEvent) => {
+      if (e.key === THEME_STORAGE_KEY && (e.newValue === 'light' || e.newValue === 'dark')) {
+        setThemeState(e.newValue);
+      }
+    };
+    window.addEventListener('storage', handleStorage);
+    return () => window.removeEventListener('storage', handleStorage);
+  }, []);
+
+  const toggleTheme = useCallback(() => {
     setThemeState((prev) => (prev === 'light' ? 'dark' : 'light'));
-  };
+  }, []);
 
-  const setTheme = (mode: ThemeMode) => {
+  const setTheme = useCallback((mode: ThemeMode) => {
     setThemeState(mode);
-  };
+  }, []);
 
-  return { theme, isDark: theme === 'dark', toggleTheme, setTheme };
+  return React.createElement(
+    ThemeContext.Provider,
+    { value: { theme, isDark: theme === 'dark', toggleTheme, setTheme } },
+    children
+  );
+};
+
+export function useTheme(): ThemeContextType {
+  const context = useContext(ThemeContext);
+  if (!context) {
+    // Standalone fallback hook if used outside provider
+    const initial = getInitialTheme();
+    return {
+      theme: initial,
+      isDark: initial === 'dark',
+      toggleTheme: () => {},
+      setTheme: () => {},
+    };
+  }
+  return context;
 }

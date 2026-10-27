@@ -1,11 +1,11 @@
 <!doctype html>
-<html lang="en" class="dark">
+<html lang="en">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Waste Pickup Request Portal</title>
+    <title>CivicPickup — Waste Pickup Request Portal</title>
     <meta name="description" content="Secure municipal waste reporting, verification, cleaner dispatch, and photo audit system with 4 distinct roles." />
-    <meta property="og:title" content="Waste Pickup Request Portal" />
+    <meta property="og:title" content="CivicPickup — Waste Pickup Request Portal" />
     <meta property="og:description" content="Secure municipal waste reporting, verification, cleaner dispatch, and photo audit system with 4 distinct roles." />
     <meta property="og:type" content="website" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -14,21 +14,17 @@
     <script>
       (function() {
         try {
-          var initialized = localStorage.getItem('civicpickup_theme_dark_default');
-          if (!initialized) {
-            localStorage.setItem('civicpickup_theme_dark_default', 'true');
-            localStorage.setItem('civicpickup_theme', 'dark');
+          var saved = localStorage.getItem('civicpickup_theme');
+          // Default to light mode for first-time visitors
+          if (saved === 'dark') {
             document.documentElement.classList.add('dark');
+            document.documentElement.style.colorScheme = 'dark';
           } else {
-            var stored = localStorage.getItem('civicpickup_theme');
-            if (stored === 'light') {
-              document.documentElement.classList.remove('dark');
-            } else {
-              document.documentElement.classList.add('dark');
-            }
+            document.documentElement.classList.remove('dark');
+            document.documentElement.style.colorScheme = 'light';
           }
         } catch (e) {
-          document.documentElement.classList.add('dark');
+          document.documentElement.classList.remove('dark');
         }
       })();
     </script>

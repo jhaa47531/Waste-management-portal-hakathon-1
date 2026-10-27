@@ -13,7 +13,8 @@ interface Particle {
   size: number;
   alpha: number;
   baseAlpha: number;
-  color: string;
+  colorDark: string;
+  colorLight: string;
 }
 
 export const ParticleCanvas: React.FC<{ className?: string }> = ({ className = '' }) => {
@@ -52,26 +53,35 @@ export const ParticleCanvas: React.FC<{ className?: string }> = ({ className = '
       particles = [];
       // Auto-reduce particle density on mobile screens
       const isMobile = width < 768;
-      const count = isMobile ? 24 : 55;
+      const count = isMobile ? 22 : 50;
 
-      const colors = [
+      const darkColors = [
         'rgba(16, 185, 129,', // Emerald
         'rgba(6, 182, 212,',  // Cyan
         'rgba(52, 211, 153,', // Light emerald
         'rgba(34, 197, 94,',  // Green
       ];
 
+      const lightColors = [
+        'rgba(5, 150, 105,',  // Emerald 600
+        'rgba(2, 132, 199,',  // Cyan 600
+        'rgba(16, 185, 129,', // Emerald 500
+        'rgba(71, 85, 105,',  // Slate 600
+      ];
+
       for (let i = 0; i < count; i++) {
-        const baseAlpha = Math.random() * 0.45 + 0.15;
+        const baseAlpha = Math.random() * 0.4 + 0.2;
+        const colorIdx = Math.floor(Math.random() * darkColors.length);
         particles.push({
           x: Math.random() * width,
           y: Math.random() * height,
           vx: (Math.random() - 0.5) * (isMobile ? 0.35 : 0.6),
           vy: (Math.random() - 0.5) * (isMobile ? 0.35 : 0.6),
-          size: Math.random() * 1.8 + 0.8,
+          size: Math.random() * 1.8 + 0.9,
           alpha: baseAlpha,
           baseAlpha,
-          color: colors[Math.floor(Math.random() * colors.length)],
+          colorDark: darkColors[colorIdx],
+          colorLight: lightColors[colorIdx],
         });
       }
     };
@@ -111,12 +121,14 @@ export const ParticleCanvas: React.FC<{ className?: string }> = ({ className = '
     if (prefersReducedMotion) {
       const width = canvas.parentElement?.clientWidth || window.innerWidth;
       const height = canvas.parentElement?.clientHeight || window.innerHeight;
+      const isDark = document.documentElement.classList.contains('dark');
 
       ctx.clearRect(0, 0, width, height);
       particles.forEach((p) => {
         ctx.beginPath();
         ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
-        ctx.fillStyle = `${p.color} ${p.alpha * 0.6})`;
+        const color = isDark ? p.colorDark : p.colorLight;
+        ctx.fillStyle = `${color} ${p.alpha * 0.7})`;
         ctx.fill();
       });
 
@@ -137,6 +149,7 @@ export const ParticleCanvas: React.FC<{ className?: string }> = ({ className = '
 
       const width = canvas.parentElement?.clientWidth || window.innerWidth;
       const height = canvas.parentElement?.clientHeight || window.innerHeight;
+      const isDark = document.documentElement.classList.contains('dark');
 
       ctx.clearRect(0, 0, width, height);
 
@@ -149,9 +162,11 @@ export const ParticleCanvas: React.FC<{ className?: string }> = ({ className = '
           const dist = Math.hypot(dx, dy);
 
           if (dist < maxDist) {
-            const lineAlpha = (1 - dist / maxDist) * 0.14;
+            const lineAlpha = (1 - dist / maxDist) * (isDark ? 0.14 : 0.12);
             ctx.beginPath();
-            ctx.strokeStyle = `rgba(16, 185, 129, ${lineAlpha})`;
+            ctx.strokeStyle = isDark
+              ? `rgba(16, 185, 129, ${lineAlpha})`
+              : `rgba(5, 150, 105, ${lineAlpha})`;
             ctx.lineWidth = 0.7;
             ctx.moveTo(particles[i].x, particles[i].y);
             ctx.lineTo(particles[j].x, particles[j].y);
@@ -196,11 +211,14 @@ export const ParticleCanvas: React.FC<{ className?: string }> = ({ className = '
         }
 
         // Draw particle dot
+        const color = isDark ? p.colorDark : p.colorLight;
         ctx.beginPath();
         ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
-        ctx.fillStyle = `${p.color} ${p.alpha})`;
-        ctx.shadowColor = 'rgba(16, 185, 129, 0.4)';
-        ctx.shadowBlur = 6;
+        ctx.fillStyle = `${color} ${p.alpha})`;
+        if (isDark) {
+          ctx.shadowColor = 'rgba(16, 185, 129, 0.4)';
+          ctx.shadowBlur = 6;
+        }
         ctx.fill();
         ctx.shadowBlur = 0;
       }

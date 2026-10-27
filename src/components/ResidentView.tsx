@@ -25,14 +25,11 @@ import {
   Clock,
   ChevronRight,
   X,
-  Phone,
   FileText,
   Inbox,
   ArrowRight,
   ArrowLeft,
   Trash2,
-  Layers,
-  Sparkles,
   ShieldCheck,
   Check,
 } from 'lucide-react';
@@ -248,13 +245,19 @@ export const ResidentView: React.FC<ResidentViewProps> = ({
       errors.fullName = 'Full name is required.';
     }
     if (!phoneNumber.trim() || phoneNumber.trim().length < 7) {
-      errors.phoneNumber = 'Phone number is required for supervisor telephone verification.';
+      errors.phoneNumber = 'Valid phone number is required for verification calls.';
     }
-    if (!photoFileMeta) {
-      errors.photo = 'Photo is required.';
+    if (!address.trim() || address.trim().length < 5) {
+      errors.address = 'Address is required.';
+    }
+    if (!localityId) {
+      errors.localityId = 'Locality is required.';
     }
     if (latitude === null || longitude === null) {
       errors.gps = 'GPS coordinates are mandatory.';
+    }
+    if (!photoFileMeta) {
+      errors.photo = 'Mandatory photographic evidence is required.';
     }
 
     if (Object.keys(errors).length > 0) {
@@ -262,19 +265,19 @@ export const ResidentView: React.FC<ResidentViewProps> = ({
       return;
     }
 
-    setFormErrors({});
     setIsSubmitting(true);
+    setFormErrors({});
 
     try {
       const res = await portalStore.submitComplaint({
-        fullName,
-        phoneNumber,
-        address,
+        fullName: fullName.trim(),
+        phoneNumber: phoneNumber.trim(),
         localityId,
-        latitude: latitude!,
-        longitude: longitude!,
+        address: address.trim(),
+        latitude,
+        longitude,
         wasteType,
-        remark,
+        remark: remark.trim() || undefined,
         photoFile: photoFileMeta!,
       });
 
@@ -282,6 +285,7 @@ export const ResidentView: React.FC<ResidentViewProps> = ({
 
       if (res.success && res.complaint) {
         setCreatedComplaint(res.complaint);
+        // Reset form
         setAddress('');
         setRemark('');
         setPhotoPreview(null);
@@ -310,73 +314,73 @@ export const ResidentView: React.FC<ResidentViewProps> = ({
     <div className="space-y-6">
       {/* Top Metrics Strip */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-        <div className="bg-[#12161c] rounded-2xl p-4 border border-white/[0.08] flex items-center justify-between shadow-xs">
+        <div className="bg-white dark:bg-[#12161c] rounded-2xl p-4 border border-slate-200 dark:border-white/[0.08] flex items-center justify-between shadow-xs">
           <div>
-            <span className="font-mono-display text-[10px] uppercase tracking-wider text-slate-400">
+            <span className="font-mono-display text-[10px] uppercase tracking-wider text-slate-500 dark:text-slate-400 font-bold">
               REPORTS SUBMITTED
             </span>
-            <p className="text-2xl font-mono font-bold text-white mt-0.5">
+            <p className="text-2xl font-mono font-bold text-slate-900 dark:text-white mt-0.5">
               {totalSubmitted}
             </p>
           </div>
-          <div className="w-10 h-10 rounded-xl bg-white/5 border border-white/10 text-slate-300 flex items-center justify-center">
-            <Camera className="w-4 h-4 text-emerald-400" />
+          <div className="w-10 h-10 rounded-xl bg-slate-100 dark:bg-white/5 border border-slate-200 dark:border-white/10 text-slate-600 dark:text-slate-300 flex items-center justify-center">
+            <Camera className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
           </div>
         </div>
 
-        <div className="bg-[#12161c] rounded-2xl p-4 border border-white/[0.08] flex items-center justify-between shadow-xs">
+        <div className="bg-white dark:bg-[#12161c] rounded-2xl p-4 border border-slate-200 dark:border-white/[0.08] flex items-center justify-between shadow-xs">
           <div>
-            <span className="font-mono-display text-[10px] uppercase tracking-wider text-slate-400">
+            <span className="font-mono-display text-[10px] uppercase tracking-wider text-slate-500 dark:text-slate-400 font-bold">
               ACTIVE DISPATCH
             </span>
-            <p className="text-2xl font-mono font-bold text-cyan-400 mt-0.5">
+            <p className="text-2xl font-mono font-bold text-cyan-600 dark:text-cyan-400 mt-0.5">
               {inProgressCount}
             </p>
           </div>
-          <div className="w-10 h-10 rounded-xl bg-cyan-950/40 border border-cyan-500/20 text-cyan-400 flex items-center justify-center">
+          <div className="w-10 h-10 rounded-xl bg-cyan-50 dark:bg-cyan-950/40 border border-cyan-200 dark:border-cyan-500/20 text-cyan-600 dark:text-cyan-400 flex items-center justify-center">
             <Clock className="w-4 h-4" />
           </div>
         </div>
 
-        <div className="bg-[#12161c] rounded-2xl p-4 border border-white/[0.08] flex items-center justify-between shadow-xs">
+        <div className="bg-white dark:bg-[#12161c] rounded-2xl p-4 border border-slate-200 dark:border-white/[0.08] flex items-center justify-between shadow-xs">
           <div>
-            <span className="font-mono-display text-[10px] uppercase tracking-wider text-slate-400">
+            <span className="font-mono-display text-[10px] uppercase tracking-wider text-slate-500 dark:text-slate-400 font-bold">
               AUDITED & RESOLVED
             </span>
-            <p className="text-2xl font-mono font-bold text-emerald-400 mt-0.5">
+            <p className="text-2xl font-mono font-bold text-emerald-600 dark:text-emerald-400 mt-0.5">
               {completedCount}
             </p>
           </div>
-          <div className="w-10 h-10 rounded-xl bg-emerald-950/40 border border-emerald-500/20 text-emerald-400 flex items-center justify-center">
+          <div className="w-10 h-10 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-500/20 text-emerald-600 dark:text-emerald-400 flex items-center justify-center">
             <CheckCircle2 className="w-4 h-4" />
           </div>
         </div>
       </div>
 
       {/* Main Tab Navigation */}
-      <div className="flex border-b border-white/[0.08] bg-[#12161c] rounded-2xl p-1.5 shadow-xs">
+      <div className="flex border-b border-slate-200 dark:border-white/[0.08] bg-slate-100 dark:bg-[#12161c] rounded-2xl p-1.5 shadow-xs gap-1.5">
         <button
           onClick={() => setActiveTab('submit')}
-          className={`flex-1 py-2.5 px-4 text-xs font-mono font-bold uppercase tracking-wider rounded-xl transition-all flex items-center justify-center gap-2 cursor-pointer ${
+          className={`flex-1 py-2.5 px-3 sm:px-4 text-xs font-mono font-bold uppercase tracking-wider rounded-xl transition-all flex items-center justify-center gap-2 cursor-pointer min-h-[44px] ${
             activeTab === 'submit'
-              ? 'bg-emerald-950/70 text-emerald-300 border border-emerald-500/30 shadow-[0_0_12px_rgba(16,185,129,0.15)]'
-              : 'text-slate-400 hover:text-slate-200'
+              ? 'bg-emerald-100 dark:bg-emerald-950/70 text-emerald-900 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-500/30 shadow-xs'
+              : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
           }`}
         >
-          <Camera className="w-3.5 h-3.5 text-emerald-400" />
-          <span>REPORT WASTE PICKUP</span>
+          <Camera className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+          <span className="truncate">REPORT WASTE PICKUP</span>
         </button>
 
         <button
           onClick={() => setActiveTab('history')}
-          className={`flex-1 py-2.5 px-4 text-xs font-mono font-bold uppercase tracking-wider rounded-xl transition-all flex items-center justify-center gap-2 cursor-pointer ${
+          className={`flex-1 py-2.5 px-3 sm:px-4 text-xs font-mono font-bold uppercase tracking-wider rounded-xl transition-all flex items-center justify-center gap-2 cursor-pointer min-h-[44px] ${
             activeTab === 'history'
-              ? 'bg-emerald-950/70 text-emerald-300 border border-emerald-500/30 shadow-[0_0_12px_rgba(16,185,129,0.15)]'
-              : 'text-slate-400 hover:text-slate-200'
+              ? 'bg-emerald-100 dark:bg-emerald-950/70 text-emerald-900 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-500/30 shadow-xs'
+              : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
           }`}
         >
-          <Clock className="w-3.5 h-3.5 text-emerald-400" />
-          <span>MY REPORTS & TRACKING ({allMyComplaints.length})</span>
+          <Clock className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+          <span className="truncate">MY REPORTS & TRACKING ({allMyComplaints.length})</span>
         </button>
       </div>
 
@@ -385,14 +389,14 @@ export const ResidentView: React.FC<ResidentViewProps> = ({
          ========================================================================= */}
       {activeTab === 'submit' && (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          <div className="lg:col-span-2 bg-[#12161c] rounded-3xl border border-white/[0.08] p-6 sm:p-8 shadow-sm space-y-6">
+          <div className="lg:col-span-2 bg-white dark:bg-[#12161c] rounded-3xl border border-slate-200 dark:border-white/[0.08] p-5 sm:p-8 shadow-xs space-y-6">
             {/* Header & Step Markers */}
-            <div className="border-b border-white/[0.08] pb-5 space-y-4">
+            <div className="border-b border-slate-200 dark:border-white/[0.08] pb-5 space-y-4">
               <div>
-                <span className="font-mono-display text-[10px] uppercase tracking-widest text-emerald-400 font-bold">
+                <span className="font-mono-display text-[10px] uppercase tracking-widest text-emerald-700 dark:text-emerald-400 font-bold">
                   MUNICIPAL REPORTING DISPATCH
                 </span>
-                <h2 className="text-xl font-mono-display font-bold uppercase tracking-wider text-white mt-1">
+                <h2 className="text-lg sm:text-xl font-mono-display font-bold uppercase tracking-wider text-slate-900 dark:text-white mt-1">
                   IMMEDIATE WASTE PICKUP REQUEST
                 </h2>
               </div>
@@ -402,65 +406,65 @@ export const ResidentView: React.FC<ResidentViewProps> = ({
                 <button
                   type="button"
                   onClick={() => setStep(1)}
-                  className={`p-2.5 rounded-xl border text-left transition-all cursor-pointer ${
+                  className={`p-2 sm:p-2.5 rounded-xl border text-left transition-all cursor-pointer min-h-[50px] ${
                     step === 1
-                      ? 'border-emerald-500/50 bg-emerald-950/40 text-emerald-300 shadow-[0_0_12px_rgba(16,185,129,0.15)]'
+                      ? 'border-emerald-500 bg-emerald-50 dark:bg-emerald-950/40 text-emerald-900 dark:text-emerald-300 shadow-xs'
                       : photoFileMeta
-                      ? 'border-white/10 bg-[#0f1217] text-slate-300'
-                      : 'border-white/5 bg-[#0b0d10] text-slate-500'
+                      ? 'border-slate-300 dark:border-white/10 bg-slate-50 dark:bg-[#0f1217] text-slate-700 dark:text-slate-300'
+                      : 'border-slate-200 dark:border-white/5 bg-slate-100 dark:bg-[#0b0d10] text-slate-400 dark:text-slate-500'
                   }`}
                 >
                   <div className="flex items-center gap-1.5 mb-1">
                     <span className="font-mono-display text-[10px] font-bold">01</span>
-                    {photoFileMeta && <Check className="w-3 h-3 text-emerald-400" />}
+                    {photoFileMeta && <Check className="w-3 h-3 text-emerald-600 dark:text-emerald-400" />}
                   </div>
-                  <span className="font-mono text-xs font-bold uppercase block">PHOTO EVIDENCE</span>
+                  <span className="font-mono text-[11px] sm:text-xs font-bold uppercase block truncate">PHOTO EVIDENCE</span>
                 </button>
 
                 <button
                   type="button"
                   onClick={() => photoFileMeta && setStep(2)}
                   disabled={!photoFileMeta}
-                  className={`p-2.5 rounded-xl border text-left transition-all ${
+                  className={`p-2 sm:p-2.5 rounded-xl border text-left transition-all min-h-[50px] ${
                     !photoFileMeta ? 'opacity-40 cursor-not-allowed' : 'cursor-pointer'
                   } ${
                     step === 2
-                      ? 'border-emerald-500/50 bg-emerald-950/40 text-emerald-300 shadow-[0_0_12px_rgba(16,185,129,0.15)]'
+                      ? 'border-emerald-500 bg-emerald-50 dark:bg-emerald-950/40 text-emerald-900 dark:text-emerald-300 shadow-xs'
                       : latitude
-                      ? 'border-white/10 bg-[#0f1217] text-slate-300'
-                      : 'border-white/5 bg-[#0b0d10] text-slate-500'
+                      ? 'border-slate-300 dark:border-white/10 bg-slate-50 dark:bg-[#0f1217] text-slate-700 dark:text-slate-300'
+                      : 'border-slate-200 dark:border-white/5 bg-slate-100 dark:bg-[#0b0d10] text-slate-400 dark:text-slate-500'
                   }`}
                 >
                   <div className="flex items-center gap-1.5 mb-1">
                     <span className="font-mono-display text-[10px] font-bold">02</span>
-                    {latitude && <Check className="w-3 h-3 text-emerald-400" />}
+                    {latitude && <Check className="w-3 h-3 text-emerald-600 dark:text-emerald-400" />}
                   </div>
-                  <span className="font-mono text-xs font-bold uppercase block">GPS & ADDRESS</span>
+                  <span className="font-mono text-[11px] sm:text-xs font-bold uppercase block truncate">GPS & ADDRESS</span>
                 </button>
 
                 <button
                   type="button"
                   onClick={() => photoFileMeta && latitude && setStep(3)}
                   disabled={!photoFileMeta || !latitude}
-                  className={`p-2.5 rounded-xl border text-left transition-all ${
+                  className={`p-2 sm:p-2.5 rounded-xl border text-left transition-all min-h-[50px] ${
                     !photoFileMeta || !latitude ? 'opacity-40 cursor-not-allowed' : 'cursor-pointer'
                   } ${
                     step === 3
-                      ? 'border-emerald-500/50 bg-emerald-950/40 text-emerald-300 shadow-[0_0_12px_rgba(16,185,129,0.15)]'
-                      : 'border-white/5 bg-[#0b0d10] text-slate-500'
+                      ? 'border-emerald-500 bg-emerald-50 dark:bg-emerald-950/40 text-emerald-900 dark:text-emerald-300 shadow-xs'
+                      : 'border-slate-200 dark:border-white/5 bg-slate-100 dark:bg-[#0b0d10] text-slate-400 dark:text-slate-500'
                   }`}
                 >
                   <div className="flex items-center gap-1.5 mb-1">
                     <span className="font-mono-display text-[10px] font-bold">03</span>
                   </div>
-                  <span className="font-mono text-xs font-bold uppercase block">CONFIRM & SUBMIT</span>
+                  <span className="font-mono text-[11px] sm:text-xs font-bold uppercase block truncate">CONFIRM & SUBMIT</span>
                 </button>
               </div>
             </div>
 
             {formErrors.submit && (
-              <div className="p-3.5 rounded-xl bg-rose-950/40 border border-rose-500/30 text-rose-300 text-xs flex items-center gap-2.5">
-                <AlertCircle className="w-4 h-4 text-rose-400 shrink-0" />
+              <div className="p-3.5 rounded-xl bg-rose-50 dark:bg-rose-950/40 border border-rose-300 dark:border-rose-500/30 text-rose-900 dark:text-rose-300 text-xs flex items-center gap-2.5">
+                <AlertCircle className="w-4 h-4 text-rose-600 dark:text-rose-400 shrink-0" />
                 <span>{formErrors.submit}</span>
               </div>
             )}
@@ -469,28 +473,28 @@ export const ResidentView: React.FC<ResidentViewProps> = ({
             {step === 1 && (
               <div className="space-y-5 animate-in fade-in duration-150">
                 <div className="space-y-1">
-                  <h3 className="font-mono-display text-xs uppercase tracking-wider text-white font-bold flex items-center gap-2">
-                    <Camera className="w-4 h-4 text-emerald-400" />
+                  <h3 className="font-mono-display text-xs uppercase tracking-wider text-slate-900 dark:text-white font-bold flex items-center gap-2">
+                    <Camera className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
                     <span>STEP 01: CAPTURE PHOTO EVIDENCE</span>
                   </h3>
-                  <p className="text-xs text-slate-400">
+                  <p className="text-xs text-slate-600 dark:text-slate-400">
                     Capture or upload a clear photo of the waste pile. Client-side canvas compression ensures instant, lightweight upload under 3 MB.
                   </p>
                 </div>
 
                 {!photoPreview ? (
-                  <label className="border-2 border-dashed border-white/10 hover:border-emerald-500/50 rounded-2xl p-8 flex flex-col items-center justify-center cursor-pointer transition-all bg-[#0b0d10] hover:bg-[#0f1419] group min-h-[220px]">
-                    <div className="w-14 h-14 rounded-2xl bg-emerald-950/40 border border-emerald-500/30 text-emerald-400 flex items-center justify-center mb-3 shadow-[0_0_15px_rgba(16,185,129,0.2)] group-hover:scale-105 transition-transform">
+                  <label className="border-2 border-dashed border-slate-300 dark:border-white/10 hover:border-emerald-500 dark:hover:border-emerald-500/50 rounded-2xl p-6 sm:p-8 flex flex-col items-center justify-center cursor-pointer transition-all bg-slate-50 hover:bg-slate-100 dark:bg-[#0b0d10] dark:hover:bg-[#0f1419] group min-h-[220px]">
+                    <div className="w-14 h-14 rounded-2xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-500/30 text-emerald-600 dark:text-emerald-400 flex items-center justify-center mb-3 shadow-xs group-hover:scale-105 transition-transform">
                       {isCompressing ? (
-                        <RefreshCw className="w-6 h-6 animate-spin text-emerald-400" />
+                        <RefreshCw className="w-6 h-6 animate-spin text-emerald-600 dark:text-emerald-400" />
                       ) : (
-                        <Upload className="w-6 h-6 text-emerald-400" />
+                        <Upload className="w-6 h-6 text-emerald-600 dark:text-emerald-400" />
                       )}
                     </div>
-                    <span className="font-mono text-xs font-bold text-white tracking-wider uppercase">
+                    <span className="font-mono text-xs font-bold text-slate-900 dark:text-white tracking-wider uppercase text-center">
                       {isCompressing ? 'COMPRESSING ON CLIENT CANVAS...' : 'CLICK TO UPLOAD OR TAKE PHOTO'}
                     </span>
-                    <span className="font-mono text-[10px] text-slate-500 mt-1">
+                    <span className="font-mono text-[10px] text-slate-500 mt-1 text-center">
                       JPG, JPEG, PNG (MAX 3 MB) • AUTOMATIC CLIENT OPTIMIZATION
                     </span>
                     <input
@@ -503,7 +507,7 @@ export const ResidentView: React.FC<ResidentViewProps> = ({
                   </label>
                 ) : (
                   <div className="space-y-3">
-                    <div className="relative rounded-2xl overflow-hidden border border-white/10 bg-black group max-w-md mx-auto shadow-md">
+                    <div className="relative rounded-2xl overflow-hidden border border-slate-300 dark:border-white/10 bg-black group max-w-md mx-auto shadow-md">
                       <img
                         src={photoPreview}
                         alt="Report evidence preview"
@@ -517,7 +521,7 @@ export const ResidentView: React.FC<ResidentViewProps> = ({
                             setPhotoFileMeta(null);
                             setCompressionInfo(null);
                           }}
-                          className="p-2 rounded-xl bg-black/70 hover:bg-rose-950 text-slate-300 hover:text-rose-400 border border-white/20 transition-all cursor-pointer shadow-md"
+                          className="p-2 rounded-xl bg-black/70 hover:bg-rose-950 text-white hover:text-rose-400 border border-white/20 transition-all cursor-pointer shadow-md"
                           title="Remove & retake photo"
                           aria-label="Remove photo"
                         >
@@ -526,8 +530,8 @@ export const ResidentView: React.FC<ResidentViewProps> = ({
                       </div>
 
                       {compressionInfo && (
-                        <div className="p-2.5 bg-[#0b0d10]/95 border-t border-white/10 flex items-center justify-between text-[11px] font-mono">
-                          <span className="text-slate-400 truncate max-w-[160px]">
+                        <div className="p-2.5 bg-slate-900/95 border-t border-white/10 flex items-center justify-between text-[11px] font-mono">
+                          <span className="text-slate-300 truncate max-w-[160px]">
                             {photoFileMeta?.name}
                           </span>
                           <span className="text-emerald-400 font-bold">
@@ -537,16 +541,16 @@ export const ResidentView: React.FC<ResidentViewProps> = ({
                       )}
                     </div>
 
-                    <div className="p-3 rounded-xl bg-emerald-950/30 border border-emerald-500/20 text-emerald-300 text-xs flex items-center gap-2">
-                      <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                    <div className="p-3 rounded-xl bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-300 dark:border-emerald-500/20 text-emerald-900 dark:text-emerald-300 text-xs flex items-center gap-2">
+                      <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
                       <span>Evidence photo ready. Proceed to Step 02 for mandatory GPS capture.</span>
                     </div>
                   </div>
                 )}
 
                 {photoError && (
-                  <p className="text-xs text-rose-400 font-mono flex items-center gap-1.5">
-                    <AlertCircle className="w-3.5 h-3.5 text-rose-400" />
+                  <p className="text-xs text-rose-600 dark:text-rose-400 font-mono flex items-center gap-1.5">
+                    <AlertCircle className="w-3.5 h-3.5 text-rose-600 dark:text-rose-400" />
                     <span>{photoError}</span>
                   </p>
                 )}
@@ -556,7 +560,7 @@ export const ResidentView: React.FC<ResidentViewProps> = ({
                     type="button"
                     onClick={goToStep2}
                     disabled={!photoFileMeta || isCompressing}
-                    className="py-3 px-6 rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 text-white font-mono-display font-bold text-xs uppercase tracking-wider shadow-[0_0_15px_rgba(16,185,129,0.3)] transition-all cursor-pointer flex items-center gap-2 min-h-[44px]"
+                    className="py-3 px-6 rounded-xl bg-emerald-600 hover:bg-emerald-700 disabled:opacity-40 text-white font-mono-display font-bold text-xs uppercase tracking-wider shadow-sm transition-all cursor-pointer flex items-center gap-2 min-h-[44px]"
                   >
                     <span>NEXT: GPS & LOCATION</span>
                     <ArrowRight className="w-3.5 h-3.5" />
@@ -569,25 +573,25 @@ export const ResidentView: React.FC<ResidentViewProps> = ({
             {step === 2 && (
               <div className="space-y-5 animate-in fade-in duration-150">
                 <div className="space-y-1">
-                  <h3 className="font-mono-display text-xs uppercase tracking-wider text-white font-bold flex items-center gap-2">
-                    <MapPin className="w-4 h-4 text-emerald-400" />
+                  <h3 className="font-mono-display text-xs uppercase tracking-wider text-slate-900 dark:text-white font-bold flex items-center gap-2">
+                    <MapPin className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
                     <span>STEP 02: MANDATORY GPS & LOCATION</span>
                   </h3>
-                  <p className="text-xs text-slate-400">
+                  <p className="text-xs text-slate-600 dark:text-slate-400">
                     Municipal standard requires authentic browser GPS coordinates to prevent false dispatches.
                   </p>
                 </div>
 
                 {/* GPS Capture Button & Box */}
-                <div className="p-4 rounded-2xl border border-white/10 bg-[#0b0d10] space-y-3">
+                <div className="p-4 rounded-2xl border border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-[#0b0d10] space-y-3">
                   <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                     <div>
-                      <h4 className="font-mono text-xs text-white font-bold flex items-center gap-2">
-                        <MapPin className="w-3.5 h-3.5 text-emerald-400" />
+                      <h4 className="font-mono text-xs text-slate-900 dark:text-white font-bold flex items-center gap-2">
+                        <MapPin className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
                         <span>BROWSER GEOLOCATION SENSOR</span>
-                        <span className="text-rose-400">*</span>
+                        <span className="text-rose-500">*</span>
                       </h4>
-                      <p className="text-[11px] text-slate-400 mt-0.5">
+                      <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
                         One-click hardware coordinate verification.
                       </p>
                     </div>
@@ -596,7 +600,7 @@ export const ResidentView: React.FC<ResidentViewProps> = ({
                       type="button"
                       onClick={captureGpsLocation}
                       disabled={gpsLoading}
-                      className="px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white font-mono font-bold text-xs uppercase tracking-wider flex items-center justify-center gap-2 shadow-[0_0_15px_rgba(16,185,129,0.2)] transition-all shrink-0 cursor-pointer min-h-[44px]"
+                      className="px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white font-mono font-bold text-xs uppercase tracking-wider flex items-center justify-center gap-2 shadow-sm transition-all shrink-0 cursor-pointer min-h-[44px]"
                     >
                       <RefreshCw className={`w-3.5 h-3.5 ${gpsLoading ? 'animate-spin' : ''}`} />
                       <span>{gpsLoading ? 'DETECTING...' : latitude ? 'UPDATE GPS' : 'DETECT CURRENT GPS'}</span>
@@ -604,9 +608,9 @@ export const ResidentView: React.FC<ResidentViewProps> = ({
                   </div>
 
                   {latitude !== null && longitude !== null && (
-                    <div className="p-3 rounded-xl bg-emerald-950/40 border border-emerald-500/30 flex flex-wrap items-center justify-between gap-2 text-xs font-mono">
-                      <div className="flex items-center gap-2 text-emerald-300">
-                        <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                    <div className="p-3 rounded-xl bg-emerald-100 dark:bg-emerald-950/40 border border-emerald-300 dark:border-emerald-500/30 flex flex-wrap items-center justify-between gap-2 text-xs font-mono">
+                      <div className="flex items-center gap-2 text-emerald-900 dark:text-emerald-300">
+                        <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
                         <span>
                           LAT: <strong>{latitude.toFixed(6)}°</strong> • LNG: <strong>{longitude.toFixed(6)}°</strong>{' '}
                           {gpsAccuracy ? `(±${gpsAccuracy}m)` : ''}
@@ -616,7 +620,7 @@ export const ResidentView: React.FC<ResidentViewProps> = ({
                         href={`https://www.google.com/maps?q=${latitude},${longitude}`}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="text-emerald-400 hover:underline flex items-center gap-1 font-bold shrink-0"
+                        className="text-emerald-700 dark:text-emerald-400 hover:underline flex items-center gap-1 font-bold shrink-0"
                       >
                         VIEW MAP <ExternalLink className="w-3 h-3" />
                       </a>
@@ -624,8 +628,8 @@ export const ResidentView: React.FC<ResidentViewProps> = ({
                   )}
 
                   {gpsError && (
-                    <div className="p-3 rounded-xl bg-rose-950/40 border border-rose-500/30 text-rose-300 text-xs flex items-start gap-2">
-                      <AlertCircle className="w-4 h-4 text-rose-400 shrink-0 mt-0.5" />
+                    <div className="p-3 rounded-xl bg-rose-50 dark:bg-rose-950/40 border border-rose-300 dark:border-rose-500/30 text-rose-900 dark:text-rose-300 text-xs flex items-start gap-2">
+                      <AlertCircle className="w-4 h-4 text-rose-600 dark:text-rose-400 shrink-0 mt-0.5" />
                       <div>
                         <p className="font-bold">GPS Capture Required</p>
                         <p className="mt-0.5">{gpsError}</p>
@@ -634,35 +638,35 @@ export const ResidentView: React.FC<ResidentViewProps> = ({
                   )}
 
                   {formErrors.gps && !gpsError && (
-                    <p className="text-xs text-rose-400 font-mono">{formErrors.gps}</p>
+                    <p className="text-xs text-rose-600 dark:text-rose-400 font-mono">{formErrors.gps}</p>
                   )}
                 </div>
 
                 {/* Locality & Detailed Address */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
-                    <label className="block font-mono-display text-[10px] uppercase tracking-wider text-slate-400 mb-1">
-                      LOCALITY / SECTOR <span className="text-rose-400">*</span>
+                    <label className="block font-mono-display text-[10px] uppercase tracking-wider text-slate-600 dark:text-slate-400 mb-1 font-bold">
+                      LOCALITY / SECTOR <span className="text-rose-500">*</span>
                     </label>
                     <select
                       value={localityId}
                       onChange={(e) => setLocalityId(e.target.value)}
-                      className="w-full px-3.5 py-2.5 rounded-xl border border-white/10 bg-[#0b0d10] text-white text-xs font-mono focus:border-emerald-500/60 focus:outline-hidden transition-colors cursor-pointer min-h-[44px]"
+                      className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 dark:border-white/10 bg-white dark:bg-[#0b0d10] text-slate-900 dark:text-white text-xs font-mono focus:border-emerald-600 focus:outline-hidden transition-colors cursor-pointer min-h-[44px]"
                     >
                       {localities.map((loc) => (
-                        <option key={loc.id} value={loc.id} className="bg-[#0b0d10]">
+                        <option key={loc.id} value={loc.id} className="bg-white dark:bg-[#0b0d10] text-slate-900 dark:text-white">
                           {loc.name}
                         </option>
                       ))}
                     </select>
                     {formErrors.localityId && (
-                      <p className="text-xs text-rose-400 font-mono mt-1">{formErrors.localityId}</p>
+                      <p className="text-xs text-rose-600 dark:text-rose-400 font-mono mt-1">{formErrors.localityId}</p>
                     )}
                   </div>
 
                   <div>
-                    <label className="block font-mono-display text-[10px] uppercase tracking-wider text-slate-400 mb-1">
-                      STREET ADDRESS / LANDMARK <span className="text-rose-400">*</span>
+                    <label className="block font-mono-display text-[10px] uppercase tracking-wider text-slate-600 dark:text-slate-400 mb-1 font-bold">
+                      STREET ADDRESS / LANDMARK <span className="text-rose-500">*</span>
                     </label>
                     <input
                       type="text"
@@ -670,10 +674,10 @@ export const ResidentView: React.FC<ResidentViewProps> = ({
                       value={address}
                       onChange={(e) => setAddress(e.target.value)}
                       placeholder="e.g. Near Community Center, Block 4"
-                      className="w-full px-3.5 py-2.5 rounded-xl border border-white/10 bg-[#0b0d10] text-white placeholder:text-slate-600 text-xs font-mono focus:border-emerald-500/60 focus:outline-hidden transition-colors min-h-[44px]"
+                      className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 dark:border-white/10 bg-white dark:bg-[#0b0d10] text-slate-900 dark:text-white placeholder:text-slate-400 dark:placeholder:text-slate-600 text-xs font-mono focus:border-emerald-600 focus:outline-hidden transition-colors min-h-[44px]"
                     />
                     {formErrors.address && (
-                      <p className="text-xs text-rose-400 font-mono mt-1">{formErrors.address}</p>
+                      <p className="text-xs text-rose-600 dark:text-rose-400 font-mono mt-1">{formErrors.address}</p>
                     )}
                   </div>
                 </div>
@@ -682,7 +686,7 @@ export const ResidentView: React.FC<ResidentViewProps> = ({
                   <button
                     type="button"
                     onClick={() => setStep(1)}
-                    className="py-2.5 px-4 rounded-xl border border-white/10 hover:bg-white/5 text-slate-300 font-mono text-xs uppercase tracking-wider flex items-center gap-1.5 transition-all cursor-pointer min-h-[44px]"
+                    className="py-2.5 px-4 rounded-xl border border-slate-300 dark:border-white/10 hover:bg-slate-100 dark:hover:bg-white/5 text-slate-700 dark:text-slate-300 font-mono text-xs uppercase tracking-wider flex items-center gap-1.5 transition-all cursor-pointer min-h-[44px]"
                   >
                     <ArrowLeft className="w-3.5 h-3.5" />
                     <span>BACK TO PHOTO</span>
@@ -691,7 +695,7 @@ export const ResidentView: React.FC<ResidentViewProps> = ({
                   <button
                     type="button"
                     onClick={goToStep3}
-                    className="py-3 px-6 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-mono-display font-bold text-xs uppercase tracking-wider shadow-[0_0_15px_rgba(16,185,129,0.3)] transition-all cursor-pointer flex items-center gap-2 min-h-[44px]"
+                    className="py-3 px-6 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-mono-display font-bold text-xs uppercase tracking-wider shadow-sm transition-all cursor-pointer flex items-center gap-2 min-h-[44px]"
                   >
                     <span>NEXT: CONFIRM & SUBMIT</span>
                     <ArrowRight className="w-3.5 h-3.5" />
@@ -704,19 +708,19 @@ export const ResidentView: React.FC<ResidentViewProps> = ({
             {step === 3 && (
               <form onSubmit={handleSubmit} className="space-y-5 animate-in fade-in duration-150">
                 <div className="space-y-1">
-                  <h3 className="font-mono-display text-xs uppercase tracking-wider text-white font-bold flex items-center gap-2">
-                    <FileText className="w-4 h-4 text-emerald-400" />
+                  <h3 className="font-mono-display text-xs uppercase tracking-wider text-slate-900 dark:text-white font-bold flex items-center gap-2">
+                    <FileText className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
                     <span>STEP 03: WASTE CATEGORY & DETAILS</span>
                   </h3>
-                  <p className="text-xs text-slate-400">
+                  <p className="text-xs text-slate-600 dark:text-slate-400">
                     Review and confirm resident contact information before submitting to the municipal queue.
                   </p>
                 </div>
 
                 {/* Waste Type Selector Grid */}
                 <div>
-                  <label className="block font-mono-display text-[10px] uppercase tracking-wider text-slate-400 mb-2">
-                    WASTE CATEGORY <span className="text-rose-400">*</span>
+                  <label className="block font-mono-display text-[10px] uppercase tracking-wider text-slate-600 dark:text-slate-400 mb-2 font-bold">
+                    WASTE CATEGORY <span className="text-rose-500">*</span>
                   </label>
                   <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                     {ALLOWED_WASTE_TYPES.map((t) => {
@@ -728,12 +732,12 @@ export const ResidentView: React.FC<ResidentViewProps> = ({
                           onClick={() => setWasteType(t)}
                           className={`p-2.5 rounded-xl border text-left font-mono text-xs capitalize transition-all cursor-pointer min-h-[44px] flex items-center justify-between ${
                             isSelected
-                              ? 'border-emerald-500/50 bg-emerald-950/40 text-emerald-300 shadow-[0_0_12px_rgba(16,185,129,0.15)] font-bold'
-                              : 'border-white/5 bg-[#0b0d10] text-slate-400 hover:border-white/10'
+                              ? 'border-emerald-500 bg-emerald-100 dark:bg-emerald-950/40 text-emerald-900 dark:text-emerald-300 font-bold shadow-xs'
+                              : 'border-slate-200 dark:border-white/5 bg-slate-50 dark:bg-[#0b0d10] text-slate-700 dark:text-slate-400 hover:border-slate-300 dark:hover:border-white/10'
                           }`}
                         >
-                          <span>{t.replace('_', ' ')}</span>
-                          {isSelected && <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />}
+                          <span className="truncate">{t.replace('_', ' ')}</span>
+                          {isSelected && <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400 shrink-0" />}
                         </button>
                       );
                     })}
@@ -743,41 +747,41 @@ export const ResidentView: React.FC<ResidentViewProps> = ({
                 {/* Contact Verification Inputs */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
-                    <label className="block font-mono-display text-[10px] uppercase tracking-wider text-slate-400 mb-1">
-                      RESIDENT NAME <span className="text-rose-400">*</span>
+                    <label className="block font-mono-display text-[10px] uppercase tracking-wider text-slate-600 dark:text-slate-400 mb-1 font-bold">
+                      RESIDENT NAME <span className="text-rose-500">*</span>
                     </label>
                     <input
                       type="text"
                       required
                       value={fullName}
                       onChange={(e) => setFullName(e.target.value)}
-                      className="w-full px-3.5 py-2.5 rounded-xl border border-white/10 bg-[#0b0d10] text-white text-xs font-mono focus:border-emerald-500/60 focus:outline-hidden transition-colors min-h-[44px]"
+                      className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 dark:border-white/10 bg-white dark:bg-[#0b0d10] text-slate-900 dark:text-white text-xs font-mono focus:border-emerald-600 focus:outline-hidden transition-colors min-h-[44px]"
                     />
                     {formErrors.fullName && (
-                      <p className="text-xs text-rose-400 font-mono mt-1">{formErrors.fullName}</p>
+                      <p className="text-xs text-rose-600 dark:text-rose-400 font-mono mt-1">{formErrors.fullName}</p>
                     )}
                   </div>
 
                   <div>
-                    <label className="block font-mono-display text-[10px] uppercase tracking-wider text-slate-400 mb-1">
-                      PHONE (SUPERVISOR CONFIRMATION) <span className="text-rose-400">*</span>
+                    <label className="block font-mono-display text-[10px] uppercase tracking-wider text-slate-600 dark:text-slate-400 mb-1 font-bold">
+                      PHONE (SUPERVISOR CONFIRMATION) <span className="text-rose-500">*</span>
                     </label>
                     <input
                       type="tel"
                       required
                       value={phoneNumber}
                       onChange={(e) => setPhoneNumber(e.target.value)}
-                      className="w-full px-3.5 py-2.5 rounded-xl border border-white/10 bg-[#0b0d10] text-white text-xs font-mono focus:border-emerald-500/60 focus:outline-hidden transition-colors min-h-[44px]"
+                      className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 dark:border-white/10 bg-white dark:bg-[#0b0d10] text-slate-900 dark:text-white text-xs font-mono focus:border-emerald-600 focus:outline-hidden transition-colors min-h-[44px]"
                     />
                     {formErrors.phoneNumber && (
-                      <p className="text-xs text-rose-400 font-mono mt-1">{formErrors.phoneNumber}</p>
+                      <p className="text-xs text-rose-600 dark:text-rose-400 font-mono mt-1">{formErrors.phoneNumber}</p>
                     )}
                   </div>
                 </div>
 
                 {/* Optional Remark */}
                 <div>
-                  <label className="block font-mono-display text-[10px] uppercase tracking-wider text-slate-400 mb-1">
+                  <label className="block font-mono-display text-[10px] uppercase tracking-wider text-slate-600 dark:text-slate-400 mb-1 font-bold">
                     ADDITIONAL LANDMARK REMARKS (OPTIONAL)
                   </label>
                   <textarea
@@ -785,25 +789,25 @@ export const ResidentView: React.FC<ResidentViewProps> = ({
                     value={remark}
                     onChange={(e) => setRemark(e.target.value)}
                     placeholder="Specific landmarks or access directions for field cleaners..."
-                    className="w-full px-3.5 py-2 rounded-xl border border-white/10 bg-[#0b0d10] text-white placeholder:text-slate-600 text-xs font-mono focus:border-emerald-500/60 focus:outline-hidden transition-colors"
+                    className="w-full px-3.5 py-2 rounded-xl border border-slate-300 dark:border-white/10 bg-white dark:bg-[#0b0d10] text-slate-900 dark:text-white placeholder:text-slate-400 dark:placeholder:text-slate-600 text-xs font-mono focus:border-emerald-600 focus:outline-hidden transition-colors"
                   />
                 </div>
 
                 {/* Summary Box */}
-                <div className="p-3.5 rounded-2xl bg-[#0b0d10] border border-white/10 space-y-1.5 text-xs font-mono">
-                  <div className="flex justify-between text-slate-400">
+                <div className="p-3.5 rounded-2xl bg-slate-50 dark:bg-[#0b0d10] border border-slate-200 dark:border-white/10 space-y-1.5 text-xs font-mono">
+                  <div className="flex justify-between text-slate-600 dark:text-slate-400">
                     <span>LOCATION:</span>
-                    <span className="text-white font-bold">{address}</span>
+                    <span className="text-slate-900 dark:text-white font-bold truncate max-w-[220px]">{address}</span>
                   </div>
-                  <div className="flex justify-between text-slate-400">
+                  <div className="flex justify-between text-slate-600 dark:text-slate-400">
                     <span>GPS SENSOR:</span>
-                    <span className="text-emerald-400 font-bold">
+                    <span className="text-emerald-700 dark:text-emerald-400 font-bold">
                       {latitude?.toFixed(4)}° N, {longitude?.toFixed(4)}° E
                     </span>
                   </div>
-                  <div className="flex justify-between text-slate-400">
+                  <div className="flex justify-between text-slate-600 dark:text-slate-400">
                     <span>EVIDENCE SIZE:</span>
-                    <span className="text-slate-300">
+                    <span className="text-slate-700 dark:text-slate-300">
                       {photoFileMeta ? `${Math.round(photoFileMeta.sizeBytes / 1024)} KB` : 'None'}
                     </span>
                   </div>
@@ -814,7 +818,7 @@ export const ResidentView: React.FC<ResidentViewProps> = ({
                   <button
                     type="button"
                     onClick={() => setStep(2)}
-                    className="py-2.5 px-4 rounded-xl border border-white/10 hover:bg-white/5 text-slate-300 font-mono text-xs uppercase tracking-wider flex items-center gap-1.5 transition-all cursor-pointer min-h-[44px]"
+                    className="py-2.5 px-4 rounded-xl border border-slate-300 dark:border-white/10 hover:bg-slate-100 dark:hover:bg-white/5 text-slate-700 dark:text-slate-300 font-mono text-xs uppercase tracking-wider flex items-center gap-1.5 transition-all cursor-pointer min-h-[44px]"
                   >
                     <ArrowLeft className="w-3.5 h-3.5" />
                     <span>BACK TO GPS</span>
@@ -823,7 +827,7 @@ export const ResidentView: React.FC<ResidentViewProps> = ({
                   <button
                     type="submit"
                     disabled={isSubmitting}
-                    className="py-3 px-8 rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white font-mono-display font-bold text-xs uppercase tracking-wider shadow-[0_0_20px_rgba(16,185,129,0.35)] transition-all cursor-pointer flex items-center gap-2 min-h-[44px]"
+                    className="py-3 px-6 sm:px-8 rounded-xl bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white font-mono-display font-bold text-xs uppercase tracking-wider shadow-sm transition-all cursor-pointer flex items-center gap-2 min-h-[44px]"
                   >
                     {isSubmitting ? (
                       <>
@@ -844,38 +848,38 @@ export const ResidentView: React.FC<ResidentViewProps> = ({
 
           {/* Sidebar / Protocol Standards */}
           <div className="space-y-4">
-            <div className="bg-[#12161c] rounded-3xl border border-white/[0.08] p-6 text-xs space-y-4 shadow-sm">
-              <h3 className="font-mono-display uppercase tracking-widest text-white text-xs font-bold flex items-center gap-2">
-                <ShieldCheck className="w-4 h-4 text-emerald-400" />
+            <div className="bg-white dark:bg-[#12161c] rounded-3xl border border-slate-200 dark:border-white/[0.08] p-5 sm:p-6 text-xs space-y-4 shadow-xs">
+              <h3 className="font-mono-display uppercase tracking-widest text-slate-900 dark:text-white text-xs font-bold flex items-center gap-2">
+                <ShieldCheck className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
                 <span>DISPATCH PROTOCOL</span>
               </h3>
-              <p className="text-slate-400 leading-relaxed font-sans">
+              <p className="text-slate-600 dark:text-slate-400 leading-relaxed font-sans">
                 Each submission enters the supervisor triage queue. Supervisors perform voice verification via phone before dispatching certified locality cleaners.
               </p>
 
-              <div className="p-3.5 rounded-2xl bg-[#0b0d10] border border-white/5 space-y-1">
-                <span className="font-mono text-[10px] text-cyan-400 font-bold block">
+              <div className="p-3.5 rounded-2xl bg-slate-50 dark:bg-[#0b0d10] border border-slate-200 dark:border-white/5 space-y-1">
+                <span className="font-mono text-[10px] text-cyan-700 dark:text-cyan-400 font-bold block">
                   01. VOICE VERIFICATION
                 </span>
-                <p className="text-[11px] text-slate-400 leading-relaxed">
+                <p className="text-[11px] text-slate-600 dark:text-slate-400 leading-relaxed">
                   Supervisor reviews report photo & calls your phone number to confirm landmark details.
                 </p>
               </div>
 
-              <div className="p-3.5 rounded-2xl bg-[#0b0d10] border border-white/5 space-y-1">
-                <span className="font-mono text-[10px] text-amber-400 font-bold block">
+              <div className="p-3.5 rounded-2xl bg-slate-50 dark:bg-[#0b0d10] border border-slate-200 dark:border-white/5 space-y-1">
+                <span className="font-mono text-[10px] text-amber-700 dark:text-amber-400 font-bold block">
                   02. DUAL EVIDENCE AUDIT
                 </span>
-                <p className="text-[11px] text-slate-400 leading-relaxed">
+                <p className="text-[11px] text-slate-600 dark:text-slate-400 leading-relaxed">
                   Resolution requires cleaner to submit post-cleanup photo from the same coordinates before audit sign-off.
                 </p>
               </div>
 
-              <div className="p-3.5 rounded-2xl bg-[#0b0d10] border border-white/5 space-y-1">
-                <span className="font-mono text-[10px] text-emerald-400 font-bold block">
+              <div className="p-3.5 rounded-2xl bg-slate-50 dark:bg-[#0b0d10] border border-slate-200 dark:border-white/5 space-y-1">
+                <span className="font-mono text-[10px] text-emerald-700 dark:text-emerald-400 font-bold block">
                   03. REALTIME TRACKING
                 </span>
-                <p className="text-[11px] text-slate-400 leading-relaxed">
+                <p className="text-[11px] text-slate-600 dark:text-slate-400 leading-relaxed">
                   Track live stage changes in your dashboard using your unique tracking code.
                 </p>
               </div>
@@ -890,15 +894,15 @@ export const ResidentView: React.FC<ResidentViewProps> = ({
       {activeTab === 'history' && (
         <div className="space-y-4">
           {/* Search & Filter Bar */}
-          <div className="bg-[#12161c] p-3.5 rounded-2xl border border-white/[0.08] flex flex-wrap items-center justify-between gap-3 shadow-xs">
+          <div className="bg-white dark:bg-[#12161c] p-3.5 rounded-2xl border border-slate-200 dark:border-white/[0.08] flex flex-wrap items-center justify-between gap-3 shadow-xs">
             <div className="relative flex-1 min-w-[240px]">
-              <Search className="w-4 h-4 text-slate-500 absolute left-3.5 top-3" />
+              <Search className="w-4 h-4 text-slate-400 dark:text-slate-500 absolute left-3.5 top-3" />
               <input
                 type="text"
                 value={searchTracking}
                 onChange={(e) => setSearchTracking(e.target.value)}
                 placeholder="Search by Tracking ID (WPR-...), Address, or Locality..."
-                className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-white/10 bg-[#0b0d10] text-white placeholder:text-slate-600 text-xs font-mono focus:border-emerald-500/60 focus:outline-hidden transition-colors min-h-[44px]"
+                className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-300 dark:border-white/10 bg-slate-50 dark:bg-[#0b0d10] text-slate-900 dark:text-white placeholder:text-slate-400 dark:placeholder:text-slate-600 text-xs font-mono focus:border-emerald-600 focus:outline-hidden transition-colors min-h-[44px]"
               />
             </div>
 
@@ -907,7 +911,7 @@ export const ResidentView: React.FC<ResidentViewProps> = ({
               <select
                 value={statusFilter}
                 onChange={(e) => setStatusFilter(e.target.value)}
-                className="px-3 py-2.5 rounded-xl border border-white/10 bg-[#0b0d10] text-slate-300 text-xs font-mono cursor-pointer focus:border-emerald-500/60 focus:outline-hidden transition-colors min-h-[44px]"
+                className="px-3 py-2.5 rounded-xl border border-slate-300 dark:border-white/10 bg-white dark:bg-[#0b0d10] text-slate-800 dark:text-slate-300 text-xs font-mono cursor-pointer focus:border-emerald-600 focus:outline-hidden transition-colors min-h-[44px]"
               >
                 <option value="all">ALL STATUSES</option>
                 <option value="submitted">SUBMITTED</option>
@@ -923,14 +927,14 @@ export const ResidentView: React.FC<ResidentViewProps> = ({
 
           {/* Empty State */}
           {residentComplaints.length === 0 ? (
-            <div className="p-12 text-center bg-[#12161c] rounded-3xl border border-white/[0.08] shadow-sm space-y-3">
-              <div className="w-14 h-14 rounded-2xl bg-white/5 border border-white/10 text-slate-500 flex items-center justify-center mx-auto">
+            <div className="p-8 sm:p-12 text-center bg-white dark:bg-[#12161c] rounded-3xl border border-slate-200 dark:border-white/[0.08] shadow-xs space-y-3">
+              <div className="w-14 h-14 rounded-2xl bg-slate-100 dark:bg-white/5 border border-slate-200 dark:border-white/10 text-slate-500 flex items-center justify-center mx-auto">
                 <Inbox className="w-6 h-6 text-slate-400" />
               </div>
-              <h3 className="font-mono-display text-sm font-bold uppercase tracking-wider text-white">
+              <h3 className="font-mono-display text-sm font-bold uppercase tracking-wider text-slate-900 dark:text-white">
                 NO REPORTS FOUND
               </h3>
-              <p className="text-xs text-slate-400 max-w-sm mx-auto leading-relaxed">
+              <p className="text-xs text-slate-600 dark:text-slate-400 max-w-sm mx-auto leading-relaxed">
                 {allMyComplaints.length === 0
                   ? "You haven't submitted any waste pickup requests yet. Click the 'Report Waste Pickup' tab above to file your first request."
                   : 'No complaints match your current search or filter query. Try resetting your filter.'}
@@ -938,7 +942,7 @@ export const ResidentView: React.FC<ResidentViewProps> = ({
               {allMyComplaints.length === 0 && (
                 <button
                   onClick={() => setActiveTab('submit')}
-                  className="mt-2 px-5 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-mono font-bold uppercase tracking-wider transition-all cursor-pointer shadow-[0_0_15px_rgba(16,185,129,0.25)] min-h-[44px]"
+                  className="mt-2 px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-mono font-bold uppercase tracking-wider transition-all cursor-pointer shadow-sm min-h-[44px]"
                 >
                   START FIRST REPORT
                 </button>
@@ -952,14 +956,14 @@ export const ResidentView: React.FC<ResidentViewProps> = ({
                   <div
                     key={complaint.id}
                     onClick={() => setSelectedComplaint(complaint)}
-                    className="bg-[#12161c] rounded-2xl border border-white/[0.08] overflow-hidden shadow-xs hover:border-white/20 hover:shadow-[0_0_20px_rgba(16,185,129,0.08)] transition-all cursor-pointer flex flex-col group"
+                    className="bg-white dark:bg-[#12161c] rounded-2xl border border-slate-200 dark:border-white/[0.08] overflow-hidden shadow-xs hover:border-emerald-500 dark:hover:border-white/20 transition-all cursor-pointer flex flex-col group"
                   >
                     {initialPhoto ? (
-                      <div className="h-44 bg-black relative overflow-hidden">
+                      <div className="h-44 bg-slate-100 dark:bg-black relative overflow-hidden">
                         <img
                           src={initialPhoto.url}
                           alt="Report photo"
-                          className="w-full h-full object-cover group-hover:scale-103 transition-transform duration-300 opacity-90"
+                          className="w-full h-full object-cover group-hover:scale-103 transition-transform duration-300 opacity-95 dark:opacity-90"
                         />
                         <div className="absolute top-2.5 left-2.5">
                           <StatusBadge status={complaint.status} size="sm" />
@@ -969,32 +973,32 @@ export const ResidentView: React.FC<ResidentViewProps> = ({
                         </div>
                       </div>
                     ) : (
-                      <div className="h-32 bg-[#0b0d10] flex items-center justify-center p-3">
-                        <MapPin className="w-6 h-6 text-slate-600" />
+                      <div className="h-32 bg-slate-100 dark:bg-[#0b0d10] flex items-center justify-center p-3">
+                        <MapPin className="w-6 h-6 text-slate-400 dark:text-slate-600" />
                       </div>
                     )}
 
                     <div className="p-4 flex-1 flex flex-col justify-between space-y-3">
                       <div>
-                        <div className="flex items-center justify-between text-xs mb-1.5">
-                          <span className="font-mono font-bold text-emerald-400">
+                        <div className="flex items-center justify-between text-xs mb-1.5 flex-wrap gap-1">
+                          <span className="font-mono font-bold text-emerald-700 dark:text-emerald-400 break-all">
                             {complaint.trackingCode}
                           </span>
                           <span className="text-slate-500 font-mono text-[10px] tabular-nums">
                             {new Date(complaint.createdAt).toLocaleDateString()}
                           </span>
                         </div>
-                        <h4 className="text-sm font-bold text-white line-clamp-1 font-sans">
+                        <h4 className="text-sm font-bold text-slate-900 dark:text-white line-clamp-1 font-sans break-words">
                           {complaint.address}
                         </h4>
-                        <p className="text-xs text-slate-400 mt-0.5 font-mono">{complaint.localityName}</p>
+                        <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5 font-mono">{complaint.localityName}</p>
                       </div>
 
-                      <div className="pt-2.5 border-t border-white/5 flex items-center justify-between text-xs font-mono text-slate-400">
-                        <span className="capitalize">
+                      <div className="pt-2.5 border-t border-slate-200 dark:border-white/5 flex items-center justify-between text-xs font-mono text-slate-600 dark:text-slate-400">
+                        <span className="capitalize truncate">
                           {complaint.wasteType.replace('_', ' ')}
                         </span>
-                        <span className="text-emerald-400 font-bold flex items-center gap-1 group-hover:translate-x-0.5 transition-transform">
+                        <span className="text-emerald-700 dark:text-emerald-400 font-bold flex items-center gap-1 group-hover:translate-x-0.5 transition-transform shrink-0">
                           <span>TIMELINE</span>
                           <ChevronRight className="w-3.5 h-3.5" />
                         </span>
@@ -1010,42 +1014,42 @@ export const ResidentView: React.FC<ResidentViewProps> = ({
 
       {/* SUCCESS MODAL ON SUBMISSION */}
       {createdComplaint && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-xs overflow-y-auto animate-in fade-in duration-150">
-          <div className="bg-[#0f1217] border border-white/10 rounded-3xl w-full max-w-lg p-6 sm:p-7 shadow-2xl space-y-5 text-center my-8 text-slate-100">
-            <div className="w-14 h-14 rounded-2xl bg-emerald-950/60 border border-emerald-500/40 text-emerald-400 mx-auto flex items-center justify-center shadow-[0_0_20px_rgba(16,185,129,0.3)]">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/60 dark:bg-black/80 backdrop-blur-xs overflow-y-auto animate-in fade-in duration-150">
+          <div className="bg-white dark:bg-[#0f1217] border border-slate-200 dark:border-white/10 rounded-3xl w-full max-w-lg p-5 sm:p-7 shadow-2xl space-y-5 text-center my-6 text-slate-900 dark:text-slate-100 max-h-[92vh] overflow-y-auto">
+            <div className="w-14 h-14 rounded-2xl bg-emerald-100 dark:bg-emerald-950/60 border border-emerald-300 dark:border-emerald-500/40 text-emerald-700 dark:text-emerald-400 mx-auto flex items-center justify-center shadow-xs">
               <CheckCircle2 className="w-8 h-8" />
             </div>
 
             <div>
-              <span className="font-mono-display text-[10px] uppercase tracking-widest text-emerald-400 font-bold">
+              <span className="font-mono-display text-[10px] uppercase tracking-widest text-emerald-700 dark:text-emerald-400 font-bold">
                 COMPLAINT LOGGED INTO AUDIT TRAIL
               </span>
-              <h3 className="text-xl font-mono-display font-bold text-white uppercase tracking-wider mt-1">
+              <h3 className="text-lg sm:text-xl font-mono-display font-bold text-slate-900 dark:text-white uppercase tracking-wider mt-1">
                 REPORT SUBMITTED SUCCESSFULLY
               </h3>
-              <p className="text-xs text-slate-400 mt-1">
+              <p className="text-xs text-slate-600 dark:text-slate-400 mt-1">
                 Your photographic and GPS evidence has been permanently recorded into the municipal registry.
               </p>
             </div>
 
             {/* Tracking ID Badge */}
-            <div className="p-4 rounded-2xl bg-[#12161c] border border-white/10 flex items-center justify-between shadow-xs">
-              <div className="text-left">
-                <span className="font-mono-display text-[10px] uppercase tracking-wider text-slate-400">
+            <div className="p-4 rounded-2xl bg-slate-50 dark:bg-[#12161c] border border-slate-200 dark:border-white/10 flex items-center justify-between shadow-xs gap-2">
+              <div className="text-left min-w-0">
+                <span className="font-mono-display text-[10px] uppercase tracking-wider text-slate-500 dark:text-slate-400 font-bold">
                   TRACKING IDENTIFIER
                 </span>
-                <p className="text-lg font-mono font-bold text-emerald-400">
+                <p className="text-base sm:text-lg font-mono font-bold text-emerald-700 dark:text-emerald-400 break-all">
                   {createdComplaint.trackingCode}
                 </p>
               </div>
               <button
                 type="button"
                 onClick={() => copyTrackingCode(createdComplaint.trackingCode)}
-                className="px-3.5 py-2 rounded-xl border border-white/10 bg-[#0b0d10] hover:bg-white/5 text-xs font-mono font-bold text-slate-200 cursor-pointer flex items-center gap-1.5 transition-all min-h-[44px]"
+                className="px-3.5 py-2 rounded-xl border border-slate-300 dark:border-white/10 bg-white dark:bg-[#0b0d10] hover:bg-slate-100 dark:hover:bg-white/5 text-xs font-mono font-bold text-slate-700 dark:text-slate-200 cursor-pointer flex items-center gap-1.5 transition-all shrink-0 min-h-[44px]"
               >
                 {copiedTracking ? (
                   <>
-                    <Check className="w-3.5 h-3.5 text-emerald-400" />
+                    <Check className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
                     <span>COPIED</span>
                   </>
                 ) : (
@@ -1057,19 +1061,19 @@ export const ResidentView: React.FC<ResidentViewProps> = ({
               </button>
             </div>
 
-            <div className="text-xs font-mono text-left bg-[#0b0d10] p-3.5 rounded-2xl border border-white/5 space-y-1 text-slate-300">
+            <div className="text-xs font-mono text-left bg-slate-50 dark:bg-[#0b0d10] p-3.5 rounded-2xl border border-slate-200 dark:border-white/5 space-y-1 text-slate-700 dark:text-slate-300">
               <p>
-                <strong className="text-slate-400">LOCATION:</strong> {createdComplaint.address} ({createdComplaint.localityName})
+                <strong className="text-slate-500 dark:text-slate-400">LOCATION:</strong> {createdComplaint.address} ({createdComplaint.localityName})
               </p>
               <p>
-                <strong className="text-slate-400">GPS:</strong> {createdComplaint.latitude.toFixed(6)}° N, {createdComplaint.longitude.toFixed(6)}° E
+                <strong className="text-slate-500 dark:text-slate-400">GPS:</strong> {createdComplaint.latitude.toFixed(6)}° N, {createdComplaint.longitude.toFixed(6)}° E
               </p>
-              <p className="text-emerald-400/90 pt-1">
+              <p className="text-emerald-700 dark:text-emerald-400/90 pt-1">
                 <strong>NEXT STEP:</strong> Supervisor will review photo & call {createdComplaint.residentPhone} to confirm before assigning cleaner.
               </p>
             </div>
 
-            <div className="flex gap-3">
+            <div className="flex flex-col sm:flex-row gap-3">
               <button
                 type="button"
                 onClick={() => {
@@ -1077,14 +1081,14 @@ export const ResidentView: React.FC<ResidentViewProps> = ({
                   setCreatedComplaint(null);
                   setActiveTab('history');
                 }}
-                className="flex-1 py-3 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-mono-display font-bold text-xs uppercase tracking-wider shadow-[0_0_15px_rgba(16,185,129,0.3)] cursor-pointer transition-all min-h-[44px]"
+                className="flex-1 py-3 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-mono-display font-bold text-xs uppercase tracking-wider shadow-sm cursor-pointer transition-all min-h-[44px]"
               >
                 VIEW LIVE TIMELINE
               </button>
               <button
                 type="button"
                 onClick={() => setCreatedComplaint(null)}
-                className="py-3 px-4 rounded-xl border border-white/10 text-slate-300 font-mono text-xs hover:bg-white/5 cursor-pointer transition-colors min-h-[44px]"
+                className="py-3 px-4 rounded-xl border border-slate-300 dark:border-white/10 text-slate-700 dark:text-slate-300 font-mono text-xs hover:bg-slate-100 dark:hover:bg-white/5 cursor-pointer transition-colors min-h-[44px]"
               >
                 DONE
               </button>
@@ -1095,21 +1099,21 @@ export const ResidentView: React.FC<ResidentViewProps> = ({
 
       {/* COMPLAINT DETAIL & TIMELINE MODAL */}
       {selectedComplaint && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-xs overflow-y-auto animate-in fade-in duration-150">
-          <div className="bg-[#0f1217] border border-white/10 rounded-3xl w-full max-w-2xl max-h-[90vh] overflow-y-auto p-6 sm:p-7 shadow-2xl space-y-6 my-8 text-slate-100">
-            <div className="flex items-start justify-between gap-4 border-b border-white/10 pb-4">
-              <div>
-                <div className="flex items-center gap-2 mb-1.5">
-                  <span className="font-mono font-bold text-emerald-400 text-sm">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/60 dark:bg-black/80 backdrop-blur-xs overflow-y-auto animate-in fade-in duration-150">
+          <div className="bg-white dark:bg-[#0f1217] border border-slate-200 dark:border-white/10 rounded-3xl w-full max-w-2xl max-h-[90vh] overflow-y-auto p-5 sm:p-7 shadow-2xl space-y-6 my-6 text-slate-900 dark:text-slate-100">
+            <div className="flex items-start justify-between gap-3 border-b border-slate-200 dark:border-white/10 pb-4">
+              <div className="min-w-0 pr-2">
+                <div className="flex items-center gap-2 mb-1.5 flex-wrap">
+                  <span className="font-mono font-bold text-emerald-700 dark:text-emerald-400 text-sm break-all">
                     {selectedComplaint.trackingCode}
                   </span>
                   <StatusBadge status={selectedComplaint.status} size="sm" />
                   <UrgencyBadge urgency={selectedComplaint.urgency} />
                 </div>
-                <h3 className="text-base font-bold text-white font-sans">
+                <h3 className="text-base font-bold text-slate-900 dark:text-white font-sans break-words">
                   {selectedComplaint.address}
                 </h3>
-                <p className="text-xs text-slate-400 font-mono mt-0.5">
+                <p className="text-xs text-slate-500 dark:text-slate-400 font-mono mt-0.5">
                   {selectedComplaint.localityName} • SUBMITTED{' '}
                   <span className="tabular-nums">
                     {new Date(selectedComplaint.createdAt).toLocaleString()}
@@ -1118,8 +1122,9 @@ export const ResidentView: React.FC<ResidentViewProps> = ({
               </div>
 
               <button
+                type="button"
                 onClick={() => setSelectedComplaint(null)}
-                className="p-1.5 rounded-xl text-slate-400 hover:text-white hover:bg-white/5 cursor-pointer shrink-0 transition-colors"
+                className="w-10 h-10 rounded-xl text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-white/5 flex items-center justify-center cursor-pointer shrink-0 transition-colors"
                 aria-label="Close modal"
               >
                 <X className="w-5 h-5" />
@@ -1128,24 +1133,24 @@ export const ResidentView: React.FC<ResidentViewProps> = ({
 
             {/* GPS & Evidence Photos Side-by-Side if resolved */}
             <div className="space-y-4">
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs font-mono bg-[#12161c] p-3.5 rounded-2xl border border-white/[0.08]">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs font-mono bg-slate-50 dark:bg-[#12161c] p-3.5 rounded-2xl border border-slate-200 dark:border-white/[0.08]">
                 <div>
-                  <span className="text-[10px] uppercase font-bold text-slate-400 block">
+                  <span className="text-[10px] uppercase font-bold text-slate-500 dark:text-slate-400 block">
                     GPS COORDINATES
                   </span>
-                  <p className="text-emerald-400 font-bold mt-0.5">
+                  <p className="text-emerald-700 dark:text-emerald-400 font-bold mt-0.5">
                     {selectedComplaint.latitude.toFixed(6)}° N, {selectedComplaint.longitude.toFixed(6)}° E
                   </p>
                 </div>
                 <div>
-                  <span className="text-[10px] uppercase font-bold text-slate-400 block">
+                  <span className="text-[10px] uppercase font-bold text-slate-500 dark:text-slate-400 block">
                     MAP NAVIGATION
                   </span>
                   <a
                     href={`https://www.google.com/maps?q=${selectedComplaint.latitude},${selectedComplaint.longitude}`}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="text-cyan-400 hover:underline flex items-center gap-1 font-bold mt-0.5"
+                    className="text-cyan-700 dark:text-cyan-400 hover:underline flex items-center gap-1 font-bold mt-0.5"
                   >
                     OPEN IN GOOGLE MAPS <ExternalLink className="w-3 h-3" />
                   </a>
@@ -1154,14 +1159,14 @@ export const ResidentView: React.FC<ResidentViewProps> = ({
 
               {/* Photo Evidence Section */}
               <div className="space-y-2">
-                <span className="font-mono-display text-[10px] uppercase tracking-wider text-slate-400 block">
+                <span className="font-mono-display text-[10px] uppercase tracking-wider text-slate-500 dark:text-slate-400 block font-bold">
                   PHOTOGRAPHIC EVIDENCE (AUDIT PAIR)
                 </span>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   {/* Before Photo */}
-                  <div className="bg-[#0b0d10] rounded-xl border border-white/10 overflow-hidden">
-                    <div className="p-2 border-b border-white/5 flex items-center justify-between">
-                      <span className="font-mono text-[10px] text-amber-400 font-bold">
+                  <div className="bg-slate-50 dark:bg-[#0b0d10] rounded-xl border border-slate-200 dark:border-white/10 overflow-hidden">
+                    <div className="p-2 border-b border-slate-200 dark:border-white/5 flex items-center justify-between">
+                      <span className="font-mono text-[10px] text-amber-700 dark:text-amber-400 font-bold">
                         01. BEFORE (INITIAL REPORT)
                       </span>
                     </div>
@@ -1173,16 +1178,16 @@ export const ResidentView: React.FC<ResidentViewProps> = ({
                         className="w-full h-44 object-cover"
                       />
                     ) : (
-                      <div className="h-44 flex items-center justify-center text-xs text-slate-500 font-mono">
+                      <div className="h-44 flex items-center justify-center text-xs text-slate-400 font-mono">
                         NO INITIAL PHOTO
                       </div>
                     )}
                   </div>
 
                   {/* After Photo (if cleaner completed) */}
-                  <div className="bg-[#0b0d10] rounded-xl border border-white/10 overflow-hidden">
-                    <div className="p-2 border-b border-white/5 flex items-center justify-between">
-                      <span className="font-mono text-[10px] text-emerald-400 font-bold">
+                  <div className="bg-slate-50 dark:bg-[#0b0d10] rounded-xl border border-slate-200 dark:border-white/10 overflow-hidden">
+                    <div className="p-2 border-b border-slate-200 dark:border-white/5 flex items-center justify-between">
+                      <span className="font-mono text-[10px] text-emerald-700 dark:text-emerald-400 font-bold">
                         02. AFTER (CLEANER EVIDENCE)
                       </span>
                     </div>
@@ -1195,7 +1200,7 @@ export const ResidentView: React.FC<ResidentViewProps> = ({
                       />
                     ) : (
                       <div className="h-44 flex flex-col items-center justify-center text-xs text-slate-500 font-mono p-4 text-center">
-                        <Clock className="w-5 h-5 text-slate-600 mb-1" />
+                        <Clock className="w-5 h-5 text-slate-400 dark:text-slate-600 mb-1" />
                         <span>AWAITING CLEANER EXECUTION</span>
                       </div>
                     )}
@@ -1212,11 +1217,11 @@ export const ResidentView: React.FC<ResidentViewProps> = ({
               </div>
             </div>
 
-            <div className="pt-2 text-right border-t border-white/10">
+            <div className="pt-2 text-right border-t border-slate-200 dark:border-white/10 flex justify-end">
               <button
                 type="button"
                 onClick={() => setSelectedComplaint(null)}
-                className="px-5 py-2.5 rounded-xl bg-white/10 hover:bg-white/15 text-xs font-mono font-bold uppercase tracking-wider text-white transition-colors cursor-pointer min-h-[44px]"
+                className="px-6 py-2.5 rounded-xl bg-slate-200 hover:bg-slate-300 dark:bg-white/10 dark:hover:bg-white/15 text-xs font-mono font-bold uppercase tracking-wider text-slate-800 dark:text-white transition-colors cursor-pointer min-h-[44px]"
               >
                 CLOSE
               </button>

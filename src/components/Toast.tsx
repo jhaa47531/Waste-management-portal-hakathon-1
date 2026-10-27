@@ -89,50 +89,50 @@ export const ToastProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         {toasts.map((t) => {
           const typeConfig = {
             success: {
-              icon: <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />,
-              border: 'border-emerald-500/30',
-              bg: 'bg-[#0f1715]/95',
-              glow: 'shadow-[0_0_20px_rgba(16,185,129,0.15)]',
+              icon: <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />,
+              border: 'border-emerald-300 dark:border-emerald-500/30',
+              bg: 'bg-white dark:bg-[#0f1715]/95',
+              glow: 'shadow-md dark:shadow-[0_0_20px_rgba(16,185,129,0.15)]',
             },
             error: {
-              icon: <AlertCircle className="w-4 h-4 text-rose-400 shrink-0" />,
-              border: 'border-rose-500/30',
-              bg: 'bg-[#181014]/95',
-              glow: 'shadow-[0_0_20px_rgba(244,63,94,0.15)]',
+              icon: <AlertCircle className="w-4 h-4 text-rose-600 dark:text-rose-400 shrink-0" />,
+              border: 'border-rose-300 dark:border-rose-500/30',
+              bg: 'bg-white dark:bg-[#181014]/95',
+              glow: 'shadow-md dark:shadow-[0_0_20px_rgba(244,63,94,0.15)]',
             },
             warning: {
-              icon: <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0" />,
-              border: 'border-amber-500/30',
-              bg: 'bg-[#18150f]/95',
-              glow: 'shadow-[0_0_20px_rgba(245,158,11,0.15)]',
+              icon: <AlertTriangle className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0" />,
+              border: 'border-amber-300 dark:border-amber-500/30',
+              bg: 'bg-white dark:bg-[#18150f]/95',
+              glow: 'shadow-md dark:shadow-[0_0_20px_rgba(245,158,11,0.15)]',
             },
             info: {
-              icon: <Info className="w-4 h-4 text-cyan-400 shrink-0" />,
-              border: 'border-cyan-500/30',
-              bg: 'bg-[#0f1619]/95',
-              glow: 'shadow-[0_0_20px_rgba(6,182,212,0.15)]',
+              icon: <Info className="w-4 h-4 text-cyan-600 dark:text-cyan-400 shrink-0" />,
+              border: 'border-cyan-300 dark:border-cyan-500/30',
+              bg: 'bg-white dark:bg-[#0f1619]/95',
+              glow: 'shadow-md dark:shadow-[0_0_20px_rgba(6,182,212,0.15)]',
             },
           }[t.type];
 
           return (
             <div
               key={t.id}
-              className={`pointer-events-auto p-3.5 rounded-xl border ${typeConfig.border} ${typeConfig.bg} ${typeConfig.glow} backdrop-blur-md text-slate-100 flex items-start gap-3 transition-all transform animate-in fade-in slide-in-from-bottom-2 duration-200`}
+              className={`pointer-events-auto p-3.5 rounded-xl border ${typeConfig.border} ${typeConfig.bg} ${typeConfig.glow} backdrop-blur-md text-slate-900 dark:text-slate-100 flex items-start gap-3 transition-all transform animate-in fade-in slide-in-from-bottom-2 duration-200`}
             >
               <div className="mt-0.5">{typeConfig.icon}</div>
               <div className="flex-1 min-w-0">
-                <p className="text-xs font-mono-display uppercase tracking-wider font-bold text-slate-100">
+                <p className="text-xs font-mono-display uppercase tracking-wider font-bold text-slate-900 dark:text-slate-100">
                   {t.title}
                 </p>
                 {t.description && (
-                  <p className="text-[11px] text-slate-300 mt-0.5 leading-relaxed break-words">
+                  <p className="text-[11px] text-slate-600 dark:text-slate-300 mt-0.5 leading-relaxed break-words">
                     {t.description}
                   </p>
                 )}
               </div>
               <button
                 onClick={() => removeToast(t.id)}
-                className="p-1 rounded-lg hover:bg-white/10 text-slate-400 hover:text-white transition-colors cursor-pointer"
+                className="p-1 rounded-lg hover:bg-slate-100 dark:hover:bg-white/10 text-slate-400 hover:text-slate-700 dark:hover:text-white transition-colors cursor-pointer"
                 aria-label="Dismiss notification"
               >
                 <X className="w-3.5 h-3.5" />
@@ -148,7 +148,6 @@ export const ToastProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 export function useToast() {
   const context = useContext(ToastContext);
   if (!context) {
-    // Graceful fallback if used outside provider
     return {
       toast: () => {},
       success: () => {},
